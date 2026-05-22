@@ -342,13 +342,38 @@
   const LS_KEY_ADHOC = 'bna1-to-adhoc-v1';
   const OVERSTOCK_THRESHOLD_DAYS = 40;
   const EWR_STOCK_RISK_THRESHOLD_DAYS = 10;
+  const AVAIL_CAP_DAYS_OF_COVER = 120;
   let procMeta = null;
 
   // EWR1 stock risk: available TO quantity at source covers less than 10 days
   // of BNA1's consumption. Replaces the static col-R flag from the template.
+  // Uses the raw L value, not the BNA1-capped one, since this reflects EWR's
+  // actual stock position.
   function isEwrStockRisk(it) {
     if (it.toAvailable == null || it.bnaConsumption == null || it.bnaConsumption <= 0) return false;
     return it.toAvailable < EWR_STOCK_RISK_THRESHOLD_DAYS * it.bnaConsumption;
+  }
+
+  // Effective available = min(raw EWR L, units that would bring BNA1 to 120 DOC).
+  // Returns null only when raw L is unknown. Returns 0 when BNA1 is already at or
+  // beyond 120 days of cover.
+  function effectiveAvailable(it) {
+    if (it.toAvailable == null) return null;
+    if (it.bnaConsumption == null || it.bnaConsumption <= 0) return it.toAvailable;
+    let neededUnits;
+    if (it.bnaDaysOfCover != null) {
+      neededUnits = Math.max(0, (AVAIL_CAP_DAYS_OF_COVER - it.bnaDaysOfCover) * it.bnaConsumption);
+    } else if (it.bnaInventory != null) {
+      neededUnits = Math.max(0, AVAIL_CAP_DAYS_OF_COVER * it.bnaConsumption - it.bnaInventory);
+    } else {
+      return it.toAvailable;
+    }
+    return Math.min(it.toAvailable, neededUnits);
+  }
+  function availIsCapped(it) {
+    if (it.toAvailable == null) return false;
+    const eff = effectiveAvailable(it);
+    return eff != null && eff < it.toAvailable;
   }
 
   // Outage = Lead − (OnHand − requestedQty) / DailyConsumption (source warehouse)
@@ -394,8 +419,13 @@
     const qty = Number(it.qty) || 0;
     const parts = [];
     if (it.toAvailable != null) {
-      const over = qty > 0 && qty > it.toAvailable;
-      parts.push(`<span class="${over ? 'over-cap' : ''}" title="Available TO quantity (purchase units) at source">Avail ${fmtNum(it.toAvailable)}</span>`);
+      const eff = effectiveAvailable(it);
+      const over = qty > 0 && qty > eff;
+      const capped = availIsCapped(it);
+      const tip = capped
+        ? `Capped to ${fmtNum(eff)} (units that would bring BNA1 to ${AVAIL_CAP_DAYS_OF_COVER} DOC). EWR raw available: ${fmtNum(it.toAvailable)}`
+        : 'Available TO quantity (purchase units) at source';
+      parts.push(`<span class="${over ? 'over-cap' : ''}" title="${escapeHtml(tip)}">Avail ${fmtNum(eff)}${capped ? '*' : ''}</span>`);
     }
     if (it.leadDays != null) {
       parts.push(`<span title="Vendor lead time">Lead ${fmtNum(it.leadDays)}d</span>`);
@@ -844,7 +874,7 @@
     const header = [
       'WAREHOUSE','BRAND','Product','TO UOM','CATEGORY','SUB-CATEGORY','ODEKO ITEM UUID','SOURCE',
       'TO Requested Quantity (Purchase Units)','Available','Current ETA',
-      'TO Available (L)','Lead Days (M)','OH Purchase Units (J)','Daily Consumption (K)','Outage Days',
+      'TO Available (L raw)',`TO Available (capped @ ${AVAIL_CAP_DAYS_OF_COVER}d BNA1 DOC)`,'Lead Days (M)','OH Purchase Units (J)','Daily Consumption (K)','Outage Days',
       'BNA1 Inventory','BNA1 Daily Consumption','BNA1 Net Days of Cover','Projected BNA1 Cover After TO','Overstock Risk',
       'EWR1 Stock Risk','Audit: No Utilization','Audit: Risk Flag','Ad-hoc',
     ];
@@ -859,6 +889,7 @@
         i.available ? 'YES' : 'NO',
         (i.eta || []).join(', '),
         i.toAvailable ?? '',
+        effectiveAvailable(i) ?? '',
         i.leadDays ?? '',
         i.ohUnits ?? '',
         i.consumption ?? '',
