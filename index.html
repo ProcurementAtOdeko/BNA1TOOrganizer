@@ -337,7 +337,15 @@
   const LS_KEY = 'bna1-to-qty-v1';
   const LS_KEY_ADHOC = 'bna1-to-adhoc-v1';
   const OVERSTOCK_THRESHOLD_DAYS = 40;
+  const EWR_STOCK_RISK_THRESHOLD_DAYS = 10;
   let procMeta = null;
+
+  // EWR1 stock risk: available TO quantity at source covers less than 10 days
+  // of BNA1's consumption. Replaces the static col-R flag from the template.
+  function isEwrStockRisk(it) {
+    if (it.toAvailable == null || it.bnaConsumption == null || it.bnaConsumption <= 0) return false;
+    return it.toAvailable < EWR_STOCK_RISK_THRESHOLD_DAYS * it.bnaConsumption;
+  }
 
   // Outage = Lead − (OnHand − requestedQty) / DailyConsumption (source warehouse)
   function computeOutage(it, qty) {
@@ -471,7 +479,13 @@
         tip: 'Current ETA from procurement sheet · ' + it.eta.join(', '),
       });
     }
-    if (it.riskFlag) flags.push({ cls: 'amber', label: 'EWR1 stock risk', tip: 'EWR1 inventory may be lower than your requested qty' });
+    if (isEwrStockRisk(it)) {
+      flags.push({
+        cls: 'amber',
+        label: 'EWR1 stock risk',
+        tip: `EWR1 has ${fmtNum(it.toAvailable)} purchase units available, less than ${EWR_STOCK_RISK_THRESHOLD_DAYS}d of BNA1's consumption (${fmtNum(EWR_STOCK_RISK_THRESHOLD_DAYS * it.bnaConsumption)} units)`,
+      });
+    }
     if (it.auditNoUtil) flags.push({ cls: 'gray', label: 'No utilization', tip: 'On TO with no tool utilization (per 219 TO Audit) — consider removing' });
     if (it.auditRisk) flags.push({ cls: 'red', label: 'Audit flag', tip: 'Flagged in 219 TO Audit risk list' });
     const qty = Number(it.qty) || 0;
@@ -489,7 +503,7 @@
   function statusSortKey(it) {
     if (!it.available) return '0_unavail';
     if (it.auditRisk) return '1_auditrisk';
-    if (it.riskFlag) return '2_risk';
+    if (isEwrStockRisk(it)) return '2_risk';
     if (it.auditNoUtil) return '3_noutil';
     if (it.adhoc) return '4_adhoc';
     return '5_avail';
@@ -507,7 +521,7 @@
     const s = fStatus.value;
     if (s === 'available' && !it.available) return false;
     if (s === 'unavailable' && it.available) return false;
-    if (s === 'risk' && !it.riskFlag) return false;
+    if (s === 'risk' && !isEwrStockRisk(it)) return false;
     if (s === 'overstock' && !isOverstock(it, Number(it.qty) || 0)) return false;
     if (s === 'noutil' && !it.auditNoUtil) return false;
     if (s === 'auditrisk' && !it.auditRisk) return false;
@@ -589,7 +603,7 @@
     const adhoc = items.filter(i => i.adhoc).length;
     const available = items.filter(i => i.available).length;
     const unavailable = total - available;
-    const risk = items.filter(i => i.riskFlag).length;
+    const risk = items.filter(isEwrStockRisk).length;
     const withQty = items.filter(i => i.qty > 0).length;
     const totalQty = items.filter(i => i.available).reduce((s,i) => s + (Number(i.qty)||0), 0);
     const blockedQty = items.filter(i => !i.available && i.qty > 0).length;
@@ -841,7 +855,7 @@
         i.bnaDaysOfCover ?? '',
         projOut,
         isOverstock(i, qty) ? 'YES' : 'NO',
-        i.riskFlag ? 'YES' : 'NO',
+        isEwrStockRisk(i) ? 'YES' : 'NO',
         i.auditNoUtil ? 'YES' : 'NO',
         i.auditRisk ? 'YES' : 'NO',
         i.adhoc ? 'YES' : 'NO',
@@ -861,7 +875,7 @@
     const header = ['WAREHOUSE','BRAND','Product','TO UOM','ODEKO ITEM UUID','SOURCE','TO Requested Quantity','Status','Ad-hoc','EWR1 Stock Risk'];
     const rows = [header, ...ready.map(i => [
       i.warehouse, i.brand, i.product, i.uom, i.uuid, i.source, i.qty, 'PENDING APPROVAL',
-      i.adhoc ? 'YES' : 'NO', i.riskFlag ? 'YES' : 'NO',
+      i.adhoc ? 'YES' : 'NO', isEwrStockRisk(i) ? 'YES' : 'NO',
     ])];
     downloadCsv(`BNA1_TO_pending_${ymd()}.csv`, rows);
     const adhocCount = ready.filter(i => i.adhoc).length;
