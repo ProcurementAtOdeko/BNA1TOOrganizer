@@ -12,6 +12,9 @@ Destination sheet (BNA1 inventory view):
   - bnaInventory:    column 'inventory' (purchase units on hand at BNA1)
   - bnaConsumption:  column 'consumption_rate' (purchase units / day at BNA1)
   - bnaDaysOfCover:  column 'net_days_of_cover'
+  - casesPerLayer:   column 'cases_per_layer'   (BK)
+  - layersPerPallet: column 'layers_per_pallet' (BL)
+  - casesPerPallet:  column 'cases_per_pallet'  (BM)
 """
 
 from __future__ import annotations
@@ -41,6 +44,9 @@ DEST_COLS = {
     "bnaInventory": "inventory",
     "bnaConsumption": "consumption_rate",
     "bnaDaysOfCover": "net_days_of_cover",
+    "casesPerLayer": "cases_per_layer",
+    "layersPerPallet": "layers_per_pallet",
+    "casesPerPallet": "cases_per_pallet",
 }
 
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -112,7 +118,14 @@ def load_dest(path: Path, warehouse: str = "BNA1") -> dict:
             if not uuid:
                 continue
             rec = {}
-            for key in ("bnaInventory", "bnaConsumption", "bnaDaysOfCover"):
+            for key in (
+                "bnaInventory",
+                "bnaConsumption",
+                "bnaDaysOfCover",
+                "casesPerLayer",
+                "layersPerPallet",
+                "casesPerPallet",
+            ):
                 v = parse_num(row.get(DEST_COLS[key]))
                 if v is not None:
                     rec[key] = v

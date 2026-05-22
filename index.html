@@ -161,6 +161,12 @@
   .qty-meta .outage.red { color: var(--red); }
   .qty-meta .outage.gray { color: var(--muted); }
   .qty-meta .over-cap { color: var(--red); font-weight: 600; }
+  .qty-meta .btn-pallet {
+    background: transparent; border: 1px solid var(--line); border-radius: 4px;
+    color: var(--ink-2); padding: 1px 6px; font-size: 10.5px; font-weight: 600;
+    cursor: pointer; line-height: 1.2; font-family: inherit;
+  }
+  .qty-meta .btn-pallet:hover { background: var(--accent-yellow); border-color: var(--accent-yellow); }
 
   .table-scroll { max-height: 640px; overflow:auto; }
   .empty { padding:30px; text-align:center; color:var(--muted); }
@@ -337,6 +343,7 @@
     adhoc: false,
     eta: null, ohUnits: null, consumption: null, toAvailable: null, leadDays: null,
     bnaInventory: null, bnaConsumption: null, bnaDaysOfCover: null,
+    casesPerLayer: null, layersPerPallet: null, casesPerPallet: null,
   }));
   const LS_KEY = 'bna1-to-qty-v1';
   const LS_KEY_ADHOC = 'bna1-to-adhoc-v1';
@@ -374,6 +381,40 @@
     if (it.toAvailable == null) return false;
     const eff = effectiveAvailable(it);
     return eff != null && eff < it.toAvailable;
+  }
+
+  // Translate a case-count request into pallet / layer / case fragments using the
+  // item's BK/BL/BM ratios. Returns null when pallet data isn't known.
+  function palletBreakdown(it, qty) {
+    if (!qty || qty <= 0) return null;
+    const cpp = it.casesPerPallet, cpl = it.casesPerLayer, lpp = it.layersPerPallet;
+    if (!cpp || cpp <= 0) return null;
+    let cases = qty;
+    const pallets = Math.floor(cases / cpp);
+    cases -= pallets * cpp;
+    let layers = 0;
+    if (cpl && cpl > 0) {
+      layers = Math.floor(cases / cpl);
+      cases -= layers * cpl;
+    }
+    const round1 = n => Number(n.toFixed(2)) === n ? n : Number(n.toFixed(2));
+    return { pallets, layers, cases: round1(cases), totalPallets: round1(qty / cpp), cpp, cpl, lpp };
+  }
+  function formatBreakdown(b) {
+    if (!b) return '';
+    const parts = [];
+    if (b.pallets) parts.push(`${b.pallets}p`);
+    if (b.layers)  parts.push(`${b.layers}L`);
+    if (b.cases)   parts.push(`${b.cases}c`);
+    return parts.length ? parts.join(' + ') : '0';
+  }
+  function nextPalletQty(it, qty) {
+    const cpp = it.casesPerPallet;
+    if (!cpp || cpp <= 0) return null;
+    const next = (Math.floor(qty / cpp) + 1) * cpp;
+    const eff = effectiveAvailable(it);
+    if (eff != null) return Math.min(next, eff);
+    return next;
   }
 
   // Outage = Lead − (OnHand − requestedQty) / DailyConsumption (source warehouse)
@@ -414,7 +455,7 @@
     return 'red';
   }
   function qtyMetaHTML(it) {
-    const hasProc = it.toAvailable != null || it.leadDays != null || it.bnaDaysOfCover != null;
+    const hasProc = it.toAvailable != null || it.leadDays != null || it.bnaDaysOfCover != null || it.casesPerPallet != null;
     if (!hasProc) return '';
     const qty = Number(it.qty) || 0;
     const parts = [];
@@ -448,6 +489,21 @@
         } else {
           parts.push(`<span class="outage ${outageClass(o)}" title="Source warehouse out of stock for ${fmtNum(o)}d before restock. Formula: Lead − (OH − Qty) / Daily Consumption">Outage ${fmtNum(o)}d</span>`);
         }
+      }
+    }
+    if (it.casesPerPallet != null && it.casesPerPallet > 0) {
+      if (qty > 0) {
+        const b = palletBreakdown(it, qty);
+        if (b) {
+          const tip = `${fmtNum(b.totalPallets)} pallets total · ${b.cpp} cases/pallet${b.cpl ? `, ${b.cpl} cases/layer` : ''}${b.lpp ? `, ${b.lpp} layers/pallet` : ''}`;
+          parts.push(`<span title="${escapeHtml(tip)}">≈ ${formatBreakdown(b)}</span>`);
+          const next = nextPalletQty(it, qty);
+          if (next != null && next > qty) {
+            parts.push(`<button type="button" class="btn-pallet" data-uuid="${escapeHtml(it.uuid)}" data-next="${next}" title="Round up to ${next} (next full pallet of ${b.cpp})">↑ pallet</button>`);
+          }
+        }
+      } else {
+        parts.push(`<span title="Pallet ratios from BNA1 sheet (BK/BL/BM)">${it.casesPerPallet}/pallet${it.casesPerLayer ? `, ${it.casesPerLayer}/layer` : ''}</span>`);
       }
     }
     return parts.join(' · ');
@@ -839,6 +895,24 @@
   }
 
   rowsEl.addEventListener('click', e => {
+    const pBtn = e.target.closest('.btn-pallet');
+    if (pBtn) {
+      const uuid = pBtn.dataset.uuid;
+      const next = Number(pBtn.dataset.next);
+      const it = items.find(i => i.uuid === uuid);
+      if (!it || !Number.isFinite(next) || next <= 0) return;
+      it.qty = next;
+      const store = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+      store[uuid] = next;
+      localStorage.setItem(LS_KEY, JSON.stringify(store));
+      if (it.adhoc) persistAdhoc();
+      const inp = pBtn.closest('td')?.querySelector('input.qty');
+      if (inp) inp.value = String(next);
+      pBtn.closest('tr')?.classList.toggle('has-qty', next > 0);
+      updateMetaCell(uuid);
+      updateKpis();
+      return;
+    }
     const btn = e.target.closest('.btn-delete-adhoc');
     if (!btn) return;
     const uuid = btn.dataset.uuid;
@@ -876,6 +950,7 @@
       'TO Requested Quantity (Purchase Units)','Available','Current ETA',
       'TO Available (L raw)',`TO Available (capped @ ${AVAIL_CAP_DAYS_OF_COVER}d BNA1 DOC)`,'Lead Days (M)','OH Purchase Units (J)','Daily Consumption (K)','Outage Days',
       'BNA1 Inventory','BNA1 Daily Consumption','BNA1 Net Days of Cover','Projected BNA1 Cover After TO','Overstock Risk',
+      'Cases / Pallet','Cases / Layer','Layers / Pallet','Pallets (qty / cpp)','Pallet Breakdown',
       'EWR1 Stock Risk','Audit: No Utilization','Audit: Risk Flag','Ad-hoc',
     ];
     const rows = [header, ...items.map(i => {
@@ -899,6 +974,11 @@
         i.bnaDaysOfCover ?? '',
         projOut,
         isOverstock(i, qty) ? 'YES' : 'NO',
+        i.casesPerPallet ?? '',
+        i.casesPerLayer ?? '',
+        i.layersPerPallet ?? '',
+        (() => { const b = palletBreakdown(i, qty); return b ? b.totalPallets : ''; })(),
+        (() => { const b = palletBreakdown(i, qty); return b ? formatBreakdown(b) : ''; })(),
         isEwrStockRisk(i) ? 'YES' : 'NO',
         i.auditNoUtil ? 'YES' : 'NO',
         i.auditRisk ? 'YES' : 'NO',
@@ -961,6 +1041,9 @@
         if (r.bnaInventory != null) it.bnaInventory = r.bnaInventory;
         if (r.bnaConsumption != null) it.bnaConsumption = r.bnaConsumption;
         if (r.bnaDaysOfCover != null) it.bnaDaysOfCover = r.bnaDaysOfCover;
+        if (r.casesPerLayer != null) it.casesPerLayer = r.casesPerLayer;
+        if (r.layersPerPallet != null) it.layersPerPallet = r.layersPerPallet;
+        if (r.casesPerPallet != null) it.casesPerPallet = r.casesPerPallet;
       });
       const blocked = items.filter(i => !i.available);
       const blockedWithEta = blocked.filter(i => i.eta && i.eta.length).length;
