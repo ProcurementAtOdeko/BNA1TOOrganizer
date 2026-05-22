@@ -25,15 +25,22 @@ jobs:
         with:
           ref: claude/upbeat-pascal-BR7lI
 
-      - name: Fetch procurement sheet
+      - name: Fetch procurement source sheet
         run: |
           curl -sSL --fail \
             "https://docs.google.com/spreadsheets/d/1FGsAgYm72Sttg9zK-eGMqnbbIB4d71rDyrpUupAV4OE/export?format=csv&gid=0" \
             -o procurement-source.csv
           test -s procurement-source.csv
 
+      - name: Fetch BNA1 inventory sheet
+        run: |
+          curl -sSL --fail \
+            "https://docs.google.com/spreadsheets/d/1sPEc5rBdRB9qaJijBh4z8DK4ZVo--5xmTGbPTZ5n2nQ/export?format=csv&gid=1794766977" \
+            -o bna1-inventory.csv
+          test -s bna1-inventory.csv
+
       - name: Build procurement.json
-        run: python3 scripts/build_procurement.py procurement-source.csv procurement.json
+        run: python3 scripts/build_procurement.py procurement-source.csv bna1-inventory.csv procurement.json
 
       - name: Commit if changed
         run: |
@@ -49,4 +56,4 @@ jobs:
 
       - name: Clean up
         if: always()
-        run: rm -f procurement-source.csv
+        run: rm -f procurement-source.csv bna1-inventory.csv

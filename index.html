@@ -234,6 +234,7 @@
           <option value="available">Available only</option>
           <option value="unavailable">Not available only</option>
           <option value="risk">EWR1 stock risk</option>
+          <option value="overstock">Overstock risk (BNA1 &gt;40d)</option>
           <option value="noutil">Audit · No utilization</option>
           <option value="auditrisk">Audit · Risk flag</option>
           <option value="adhoc">Ad-hoc items</option>
@@ -331,16 +332,36 @@
   const items = DATA.items.map(i => ({
     ...i, adhoc: false,
     eta: null, ohUnits: null, consumption: null, toAvailable: null, leadDays: null,
+    bnaInventory: null, bnaConsumption: null, bnaDaysOfCover: null,
   }));
   const LS_KEY = 'bna1-to-qty-v1';
   const LS_KEY_ADHOC = 'bna1-to-adhoc-v1';
+  const OVERSTOCK_THRESHOLD_DAYS = 40;
   let procMeta = null;
 
-  // Outage = Lead − (OnHand − requestedQty) / DailyConsumption
-  // Positive = days source warehouse will be out of stock while waiting for restock.
+  // Outage = Lead − (OnHand − requestedQty) / DailyConsumption (source warehouse)
   function computeOutage(it, qty) {
     if (it.leadDays == null || it.ohUnits == null || !it.consumption || it.consumption <= 0) return null;
     return it.leadDays - (it.ohUnits - qty) / it.consumption;
+  }
+
+  // Projected BNA1 days of cover AFTER transfer arrives.
+  // null => can't compute; Infinity => no consumption at BNA1 so any qty is overstock.
+  function projectedDaysOfCover(it, qty) {
+    if (it.bnaDaysOfCover == null && it.bnaInventory == null) return null;
+    if (it.bnaConsumption == null) return null;
+    if (it.bnaConsumption <= 0) return qty > 0 ? Infinity : (it.bnaDaysOfCover ?? null);
+    const base = it.bnaDaysOfCover != null ? it.bnaDaysOfCover
+               : it.bnaInventory != null ? it.bnaInventory / it.bnaConsumption
+               : null;
+    if (base == null) return null;
+    return base + qty / it.bnaConsumption;
+  }
+
+  function isOverstock(it, qty) {
+    if (qty <= 0) return false;
+    const p = projectedDaysOfCover(it, qty);
+    return p != null && p > OVERSTOCK_THRESHOLD_DAYS;
   }
   function fmtNum(n) {
     if (n == null) return '—';
@@ -356,7 +377,7 @@
     return 'red';
   }
   function qtyMetaHTML(it) {
-    const hasProc = it.toAvailable != null || it.leadDays != null;
+    const hasProc = it.toAvailable != null || it.leadDays != null || it.bnaDaysOfCover != null;
     if (!hasProc) return '';
     const qty = Number(it.qty) || 0;
     const parts = [];
@@ -367,14 +388,24 @@
     if (it.leadDays != null) {
       parts.push(`<span title="Vendor lead time">Lead ${fmtNum(it.leadDays)}d</span>`);
     }
+    if (it.bnaDaysOfCover != null) {
+      const proj = qty > 0 ? projectedDaysOfCover(it, qty) : it.bnaDaysOfCover;
+      const projOK = proj != null && proj !== Infinity;
+      const overstock = qty > 0 && isOverstock(it, qty);
+      const cls = overstock ? 'outage red' : (projOK && proj > OVERSTOCK_THRESHOLD_DAYS ? 'outage amber' : '');
+      const label = qty > 0
+        ? (proj === Infinity ? 'BNA1 cover ∞' : `BNA1 cover → ${fmtNum(proj)}d`)
+        : `BNA1 cover ${fmtNum(it.bnaDaysOfCover)}d`;
+      parts.push(`<span class="${cls}" title="Net days of cover at BNA1 ${qty > 0 ? `after this transfer of ${qty}` : 'today'}. Overstock threshold ${OVERSTOCK_THRESHOLD_DAYS}d.">${label}</span>`);
+    }
     if (qty > 0) {
       const o = computeOutage(it, qty);
-      if (o == null) {
-        parts.push('<span class="outage gray" title="Cannot compute outage — missing consumption data">Outage —</span>');
-      } else if (o <= 0) {
-        parts.push(`<span class="outage green" title="No source outage: ${fmtNum(-o)}d of cover after lead time">Safe ${fmtNum(-o)}d</span>`);
-      } else {
-        parts.push(`<span class="outage ${outageClass(o)}" title="Source warehouse out of stock for ${fmtNum(o)}d before restock. Formula: Lead − (OH − Qty) / Daily Consumption">Outage ${fmtNum(o)}d</span>`);
+      if (o != null) {
+        if (o <= 0) {
+          parts.push(`<span class="outage green" title="No source outage: ${fmtNum(-o)}d of cover after lead time">Safe ${fmtNum(-o)}d</span>`);
+        } else {
+          parts.push(`<span class="outage ${outageClass(o)}" title="Source warehouse out of stock for ${fmtNum(o)}d before restock. Formula: Lead − (OH − Qty) / Daily Consumption">Outage ${fmtNum(o)}d</span>`);
+        }
       }
     }
     return parts.join(' · ');
@@ -385,6 +416,14 @@
     // UUIDs only contain [a-f0-9-], safe to inline in selector without escaping.
     const cell = document.querySelector(`[data-meta-uuid="${uuid}"]`);
     if (cell) cell.innerHTML = qtyMetaHTML(it);
+    // Also refresh the chips cell since Overstock chip is qty-driven.
+    const row = cell && cell.closest('tr');
+    const chipsCell = row && row.querySelector('.chips-cell');
+    if (chipsCell) {
+      chipsCell.innerHTML = statusFlags(it).map(f =>
+        `<span class="chip ${f.cls}" data-tip="${escapeHtml(f.tip)}" title="${escapeHtml(f.tip)}">${escapeHtml(f.label)}</span>`
+      ).join('');
+    }
   }
 
   const adhocStored = JSON.parse(localStorage.getItem(LS_KEY_ADHOC) || '[]');
@@ -435,6 +474,16 @@
     if (it.riskFlag) flags.push({ cls: 'amber', label: 'EWR1 stock risk', tip: 'EWR1 inventory may be lower than your requested qty' });
     if (it.auditNoUtil) flags.push({ cls: 'gray', label: 'No utilization', tip: 'On TO with no tool utilization (per 219 TO Audit) — consider removing' });
     if (it.auditRisk) flags.push({ cls: 'red', label: 'Audit flag', tip: 'Flagged in 219 TO Audit risk list' });
+    const qty = Number(it.qty) || 0;
+    if (qty > 0 && isOverstock(it, qty)) {
+      const p = projectedDaysOfCover(it, qty);
+      const label = p === Infinity ? 'Overstock ∞' : `Overstock ${fmtNum(p)}d`;
+      flags.push({
+        cls: 'red',
+        label,
+        tip: `Transferring ${qty} would push BNA1 to ${p === Infinity ? 'effectively infinite' : fmtNum(p)+' days of'} cover (threshold ${OVERSTOCK_THRESHOLD_DAYS}d). Formula: bnaDaysOfCover + qty / bnaConsumption`,
+      });
+    }
     return flags;
   }
   function statusSortKey(it) {
@@ -459,6 +508,7 @@
     if (s === 'available' && !it.available) return false;
     if (s === 'unavailable' && it.available) return false;
     if (s === 'risk' && !it.riskFlag) return false;
+    if (s === 'overstock' && !isOverstock(it, Number(it.qty) || 0)) return false;
     if (s === 'noutil' && !it.auditNoUtil) return false;
     if (s === 'auditrisk' && !it.auditRisk) return false;
     if (s === 'adhoc' && !it.adhoc) return false;
@@ -549,6 +599,7 @@
       .filter(i => !i.available && i.eta && i.eta.length)
       .map(i => i.eta[0])
       .sort()[0];
+    const overstockCount = items.filter(i => isOverstock(i, Number(i.qty) || 0)).length;
 
     const kpis = [
       { label: 'Items on Template', value: total - adhoc, cls: '' },
@@ -561,6 +612,7 @@
         delta: earliestBlockedEta ? `Earliest: ${earliestBlockedEta}` : 'No dates yet',
       }] : []),
       { label: 'EWR1 Stock Risk', value: risk, cls: 'amber' },
+      ...(overstockCount ? [{ label: 'Overstock Risk', value: overstockCount, cls: 'red', delta: `BNA1 > ${OVERSTOCK_THRESHOLD_DAYS}d cover after TO` }] : []),
       ...(adhoc ? [{ label: 'Ad-hoc Items', value: adhoc, cls: 'accent' }] : []),
       { label: 'Items with Qty', value: withQty, cls: 'accent' },
       { label: 'Total Cases on TO', value: totalQty, cls: 'accent' },
@@ -762,9 +814,18 @@
   }
 
   $('btn-export-csv').addEventListener('click', () => {
-    const header = ['WAREHOUSE','BRAND','Product','TO UOM','CATEGORY','SUB-CATEGORY','ODEKO ITEM UUID','SOURCE','TO Requested Quantity (Purchase Units)','Available','Current ETA','TO Available (L)','Lead Days (M)','OH Purchase Units (J)','Daily Consumption (K)','Outage Days','EWR1 Stock Risk','Audit: No Utilization','Audit: Risk Flag','Ad-hoc'];
+    const header = [
+      'WAREHOUSE','BRAND','Product','TO UOM','CATEGORY','SUB-CATEGORY','ODEKO ITEM UUID','SOURCE',
+      'TO Requested Quantity (Purchase Units)','Available','Current ETA',
+      'TO Available (L)','Lead Days (M)','OH Purchase Units (J)','Daily Consumption (K)','Outage Days',
+      'BNA1 Inventory','BNA1 Daily Consumption','BNA1 Net Days of Cover','Projected BNA1 Cover After TO','Overstock Risk',
+      'EWR1 Stock Risk','Audit: No Utilization','Audit: Risk Flag','Ad-hoc',
+    ];
     const rows = [header, ...items.map(i => {
-      const o = i.qty > 0 ? computeOutage(i, i.qty) : null;
+      const qty = Number(i.qty) || 0;
+      const o = qty > 0 ? computeOutage(i, qty) : null;
+      const proj = qty > 0 ? projectedDaysOfCover(i, qty) : null;
+      const projOut = proj == null ? '' : (proj === Infinity ? 'Infinity' : Number(proj.toFixed(2)));
       return [
         i.warehouse, i.brand, i.product, i.uom, i.category, i.subCategory, i.uuid, i.source,
         i.qty ?? '',
@@ -775,6 +836,11 @@
         i.ohUnits ?? '',
         i.consumption ?? '',
         o == null ? '' : Number(o.toFixed(2)),
+        i.bnaInventory ?? '',
+        i.bnaConsumption ?? '',
+        i.bnaDaysOfCover ?? '',
+        projOut,
+        isOverstock(i, qty) ? 'YES' : 'NO',
         i.riskFlag ? 'YES' : 'NO',
         i.auditNoUtil ? 'YES' : 'NO',
         i.auditRisk ? 'YES' : 'NO',
@@ -834,14 +900,22 @@
         if (r.consumption != null) it.consumption = r.consumption;
         if (r.toAvailable != null) it.toAvailable = r.toAvailable;
         if (r.leadDays != null) it.leadDays = r.leadDays;
+        if (r.bnaInventory != null) it.bnaInventory = r.bnaInventory;
+        if (r.bnaConsumption != null) it.bnaConsumption = r.bnaConsumption;
+        if (r.bnaDaysOfCover != null) it.bnaDaysOfCover = r.bnaDaysOfCover;
       });
       const blocked = items.filter(i => !i.available);
       const blockedWithEta = blocked.filter(i => i.eta && i.eta.length).length;
-      const withProc = items.filter(i => i.toAvailable != null || i.leadDays != null).length;
+      const withSrc = items.filter(i => i.toAvailable != null || i.leadDays != null).length;
+      const withDest = items.filter(i => i.bnaDaysOfCover != null || i.bnaInventory != null).length;
       const note = $('eta-status');
       if (note) {
         const rel = relativeTime(new Date(data.fetchedAt));
-        note.innerHTML = `Procurement data · ${withProc} of ${items.length} items linked · ${blockedWithEta} of ${blocked.length} blocked items have an ETA · refreshed ${rel} · <a href="${escapeHtml(data.source)}" target="_blank" rel="noopener">source</a>`;
+        const sourceLabels = { procurement: 'EWR1 source', bna1Inventory: 'BNA1 inventory' };
+        const sourceLinks = data.sources
+          ? Object.entries(data.sources).map(([k, v]) => `<a href="${escapeHtml(v)}" target="_blank" rel="noopener">${escapeHtml(sourceLabels[k] || k)}</a>`).join(' · ')
+          : (data.source ? `<a href="${escapeHtml(data.source)}" target="_blank" rel="noopener">source</a>` : '');
+        note.innerHTML = `Procurement · ${withSrc} EWR1, ${withDest} BNA1 linked · ${blockedWithEta} of ${blocked.length} blocked have ETA · refreshed ${rel} · ${sourceLinks}`;
       }
       render();
     })
