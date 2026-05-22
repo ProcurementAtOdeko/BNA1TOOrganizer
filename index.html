@@ -312,6 +312,7 @@
     </div>
   </div>
 
+  <p class="footer-note" id="eta-status">Loading Current ETA data…</p>
   <p class="footer-note">Quantities persist locally. Use <strong>Export TO</strong> to generate the final CSV (only items with Qty &gt; 0 and Available status).</p>
 </main>
 
@@ -321,9 +322,10 @@
 <script>
 (() => {
   const DATA = JSON.parse(document.getElementById('bna1-data').textContent);
-  const items = DATA.items.map(i => ({ ...i, adhoc: false }));
+  const items = DATA.items.map(i => ({ ...i, adhoc: false, eta: null }));
   const LS_KEY = 'bna1-to-qty-v1';
   const LS_KEY_ADHOC = 'bna1-to-adhoc-v1';
+  let etaMeta = null;
 
   const adhocStored = JSON.parse(localStorage.getItem(LS_KEY_ADHOC) || '[]');
   adhocStored.forEach(a => items.push({ ...a, adhoc: true, available: true, riskFlag: false, auditNoUtil: false, auditRisk: false, warehouse: 'BNA1' }));
@@ -361,6 +363,15 @@
     if (it.adhoc) flags.push({ cls: 'violet', label: 'Ad-hoc', tip: 'Added manually outside of the template' });
     if (!it.available) flags.push({ cls: 'red', label: 'Not available', tip: '7-day lead time required — UUID not in allowed-for-TO list (Sheet3)' });
     else if (!it.adhoc) flags.push({ cls: 'green', label: 'Available', tip: 'Cleared for transfer order' });
+    if (!it.available && it.eta && it.eta.length) {
+      const earliest = it.eta[0];
+      const more = it.eta.length > 1 ? ` +${it.eta.length - 1}` : '';
+      flags.push({
+        cls: 'amber',
+        label: `ETA ${earliest}${more}`,
+        tip: 'Current ETA from procurement sheet · ' + it.eta.join(', '),
+      });
+    }
     if (it.riskFlag) flags.push({ cls: 'amber', label: 'EWR1 stock risk', tip: 'EWR1 inventory may be lower than your requested qty' });
     if (it.auditNoUtil) flags.push({ cls: 'gray', label: 'No utilization', tip: 'On TO with no tool utilization (per 219 TO Audit) — consider removing' });
     if (it.auditRisk) flags.push({ cls: 'red', label: 'Audit flag', tip: 'Flagged in 219 TO Audit risk list' });
@@ -472,10 +483,22 @@
     const totalQty = items.filter(i => i.available).reduce((s,i) => s + (Number(i.qty)||0), 0);
     const blockedQty = items.filter(i => !i.available && i.qty > 0).length;
 
+    const blockedWithEta = items.filter(i => !i.available && i.eta && i.eta.length).length;
+    const earliestBlockedEta = items
+      .filter(i => !i.available && i.eta && i.eta.length)
+      .map(i => i.eta[0])
+      .sort()[0];
+
     const kpis = [
       { label: 'Items on Template', value: total - adhoc, cls: '' },
       { label: 'Available for TO', value: available, cls: 'green' },
       { label: 'Not Available', value: unavailable, cls: 'red', delta: unavailable ? '7-day lead time required' : '' },
+      ...(unavailable ? [{
+        label: 'Blocked w/ ETA',
+        value: blockedWithEta,
+        cls: 'amber',
+        delta: earliestBlockedEta ? `Earliest: ${earliestBlockedEta}` : 'No dates yet',
+      }] : []),
       { label: 'EWR1 Stock Risk', value: risk, cls: 'amber' },
       ...(adhoc ? [{ label: 'Ad-hoc Items', value: adhoc, cls: 'accent' }] : []),
       { label: 'Items with Qty', value: withQty, cls: 'accent' },
@@ -677,11 +700,12 @@
   }
 
   $('btn-export-csv').addEventListener('click', () => {
-    const header = ['WAREHOUSE','BRAND','Product','TO UOM','CATEGORY','SUB-CATEGORY','ODEKO ITEM UUID','SOURCE','TO Requested Quantity (Purchase Units)','Available','EWR1 Stock Risk','Audit: No Utilization','Audit: Risk Flag','Ad-hoc'];
+    const header = ['WAREHOUSE','BRAND','Product','TO UOM','CATEGORY','SUB-CATEGORY','ODEKO ITEM UUID','SOURCE','TO Requested Quantity (Purchase Units)','Available','Current ETA','EWR1 Stock Risk','Audit: No Utilization','Audit: Risk Flag','Ad-hoc'];
     const rows = [header, ...items.map(i => [
       i.warehouse, i.brand, i.product, i.uom, i.category, i.subCategory, i.uuid, i.source,
       i.qty ?? '',
       i.available ? 'YES' : 'NO',
+      (i.eta || []).join(', '),
       i.riskFlag ? 'YES' : 'NO',
       i.auditNoUtil ? 'YES' : 'NO',
       i.auditRisk ? 'YES' : 'NO',
@@ -723,6 +747,36 @@
     t.className = 'toast show' + (kind ? ' '+kind : '');
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+  }
+
+  // Load ETA mapping (column G from procurement sheet) and apply to items.
+  // The eta.json file is refreshed hourly by .github/workflows/refresh-eta.yml.
+  fetch('./eta.json', { cache: 'no-cache' })
+    .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+    .then(data => {
+      etaMeta = data;
+      const m = data.eta || {};
+      items.forEach(it => { if (m[it.uuid]) it.eta = m[it.uuid]; });
+      const blocked = items.filter(i => !i.available);
+      const blockedWithEta = blocked.filter(i => i.eta && i.eta.length).length;
+      const note = $('eta-status');
+      if (note) {
+        const rel = relativeTime(new Date(data.fetchedAt));
+        note.innerHTML = `Current ETA · ${blockedWithEta} of ${blocked.length} blocked items have a date (${data.count} ETAs total) · refreshed ${rel} · <a href="${escapeHtml(data.source)}" target="_blank" rel="noopener">source</a>`;
+      }
+      render();
+    })
+    .catch(err => {
+      const note = $('eta-status');
+      if (note) note.textContent = `Current ETA data unavailable (${err.message})`;
+    });
+
+  function relativeTime(d) {
+    const diffSec = Math.round((Date.now() - d.getTime()) / 1000);
+    if (diffSec < 60) return 'just now';
+    if (diffSec < 3600) return `${Math.round(diffSec/60)} min ago`;
+    if (diffSec < 86400) return `${Math.round(diffSec/3600)}h ago`;
+    return d.toISOString().slice(0,10);
   }
 
   render();

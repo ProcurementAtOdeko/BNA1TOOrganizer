@@ -1,0 +1,52 @@
+name: Refresh ETA data
+
+on:
+  schedule:
+    - cron: "15 * * * *"   # hourly at :15
+  workflow_dispatch:
+  push:
+    branches: [claude/upbeat-pascal-BR7lI]
+    paths:
+      - ".github/workflows/refresh-eta.yml"
+      - "scripts/build_eta.py"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-eta
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: claude/upbeat-pascal-BR7lI
+
+      - name: Fetch ETA sheet
+        run: |
+          curl -sSL --fail \
+            "https://docs.google.com/spreadsheets/d/1FGsAgYm72Sttg9zK-eGMqnbbIB4d71rDyrpUupAV4OE/export?format=csv&gid=0" \
+            -o eta-source.csv
+          test -s eta-source.csv
+
+      - name: Build eta.json
+        run: python3 scripts/build_eta.py eta-source.csv eta.json
+
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- eta.json; then
+            echo "No ETA changes."
+            exit 0
+          fi
+          git add eta.json
+          git commit -m "chore: refresh ETA data ($(date -u +%Y-%m-%dT%H:%MZ))"
+          git push origin claude/upbeat-pascal-BR7lI
+
+      - name: Clean up
+        if: always()
+        run: rm -f eta-source.csv
