@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>BNA1 Transfer Order Dashboard</title>
+<style>
+  :root {
+    --bg: #0f1419;
+    --panel: #161c25;
+    --panel-2: #1e2632;
+    --line: #29333f;
+    --ink: #e6edf3;
+    --muted: #8b96a5;
+    --accent: #4f8cff;
+    --green: #2ea043;
+    --green-soft: rgba(46,160,67,.18);
+    --red: #e5484d;
+    --red-soft: rgba(229,72,77,.18);
+    --amber: #d29922;
+    --amber-soft: rgba(210,153,34,.18);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,sans-serif; }
+  a { color: var(--accent); }
+  header {
+    padding: 18px 24px; border-bottom: 1px solid var(--line);
+    display:flex; align-items:center; justify-content:space-between; gap:16px;
+    background:var(--panel); position:sticky; top:0; z-index:10;
+  }
+  header h1 { margin:0; font-size:18px; font-weight:600; letter-spacing:.2px; }
+  header .sub { color:var(--muted); font-size:12px; margin-top:2px; }
+  header .actions { display:flex; gap:8px; }
+  button, .btn {
+    background:var(--panel-2); color:var(--ink); border:1px solid var(--line);
+    padding:8px 14px; border-radius:6px; cursor:pointer; font-size:13px;
+    transition: background .15s, border-color .15s;
+  }
+  button:hover { background:#262f3d; border-color:#39465a; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:white; }
+  button.primary:hover { background:#3d78e6; }
+  button.ghost { background:transparent; }
+  main { padding: 20px 24px 60px; max-width: 1600px; margin: 0 auto; }
+  .kpis { display:grid; grid-template-columns: repeat(auto-fit, minmax(170px,1fr)); gap:12px; margin-bottom:20px; }
+  .kpi { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px 16px; }
+  .kpi .label { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.5px; }
+  .kpi .value { font-size:24px; font-weight:600; margin-top:4px; }
+  .kpi .delta { font-size:12px; color:var(--muted); margin-top:2px; }
+  .kpi.green .value { color: var(--green); }
+  .kpi.red .value { color: var(--red); }
+  .kpi.amber .value { color: var(--amber); }
+  .kpi.accent .value { color: var(--accent); }
+
+  .grid { display:grid; grid-template-columns: 2fr 1fr; gap:16px; }
+  @media (max-width: 1100px){ .grid { grid-template-columns: 1fr; } }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:8px; }
+  .card h3 { margin:0; padding:14px 16px; border-bottom:1px solid var(--line); font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); display:flex; justify-content:space-between; align-items:center; }
+  .card .body { padding: 14px 16px; }
+
+  .toolbar { display:flex; flex-wrap:wrap; gap:10px; padding:12px 16px; border-bottom:1px solid var(--line); align-items:center; }
+  .toolbar input[type=text], .toolbar select {
+    background:var(--panel-2); color:var(--ink); border:1px solid var(--line);
+    padding:7px 10px; border-radius:6px; font-size:13px; outline:none; min-width:140px;
+  }
+  .toolbar input[type=text]:focus, .toolbar select:focus { border-color: var(--accent); }
+  .toolbar .grow { flex:1; }
+  .chip {
+    display:inline-flex; align-items:center; gap:6px;
+    padding:3px 8px; border-radius:999px; font-size:11px;
+    background: var(--panel-2); border:1px solid var(--line); color: var(--muted);
+  }
+  .chip.green { background: var(--green-soft); color: #6fd37f; border-color: transparent; }
+  .chip.red { background: var(--red-soft); color: #ff8389; border-color: transparent; }
+  .chip.amber { background: var(--amber-soft); color: #f0c860; border-color: transparent; }
+
+  table { width:100%; border-collapse: collapse; font-size:13px; }
+  thead th {
+    text-align:left; padding:10px 12px; background:var(--panel-2);
+    color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.5px;
+    border-bottom:1px solid var(--line); position: sticky; top:0; cursor:pointer; user-select:none;
+  }
+  thead th .arrow { opacity:.4; margin-left:4px; }
+  thead th.sorted .arrow { opacity:1; color:var(--accent); }
+  tbody td { padding:8px 12px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  tbody tr:hover { background: rgba(79,140,255,0.04); }
+  tbody tr.has-qty { background: rgba(79,140,255,0.06); }
+  tbody td.product { font-weight: 500; max-width: 360px; }
+  tbody td.product .unavail { color: var(--red); border-left:3px solid var(--red); padding-left:8px; margin-left:-8px; }
+  tbody td.product .avail { color: var(--ink); }
+  tbody td.product .product-sub { display:block; color:var(--muted); font-size:11px; margin-top:2px; }
+  tbody td input.qty {
+    width:84px; background:var(--panel-2); color:var(--ink); border:1px solid var(--line);
+    padding:6px 8px; border-radius:5px; font-size:13px; text-align:right; outline:none;
+  }
+  tbody td input.qty:focus { border-color: var(--accent); }
+  tbody tr.unavailable input.qty { background: var(--red-soft); border-color: transparent; color:#ff8389; }
+  tbody tr.unavailable input.qty:focus { border-color: var(--red); }
+
+  .table-scroll { max-height: 640px; overflow:auto; }
+  .empty { padding:30px; text-align:center; color:var(--muted); }
+
+  .bar-list { display:flex; flex-direction:column; gap:6px; }
+  .bar-row { display:grid; grid-template-columns: 130px 1fr 36px; align-items:center; gap:10px; font-size:12px; }
+  .bar-row .name { color: var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bar-row .bar { height:8px; background: var(--panel-2); border-radius: 4px; overflow:hidden; }
+  .bar-row .bar > div { height:100%; background: linear-gradient(90deg, var(--accent), #6ea8ff); border-radius:4px; }
+  .bar-row .count { text-align:right; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .audit-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+  .audit-list li { padding:8px 10px; background:var(--panel-2); border-radius:6px; font-size:12px; border-left:3px solid var(--amber); }
+  .audit-list li.risk { border-left-color: var(--red); }
+
+  .footer-note { color: var(--muted); font-size:12px; text-align:center; margin-top:24px; }
+  .toast {
+    position: fixed; bottom: 20px; right: 20px; padding: 10px 16px;
+    background: var(--green); color: white; border-radius:6px; font-size:13px;
+    opacity:0; transform: translateY(8px); transition: all .2s; pointer-events:none;
+    box-shadow: 0 4px 16px rgba(0,0,0,.3); z-index: 100;
+  }
+  .toast.show { opacity:1; transform: translateY(0); }
+  .toast.warn { background: var(--amber); }
+  .toast.error { background: var(--red); }
+
+  .legend { display:flex; gap:14px; color:var(--muted); font-size:11px; }
+  .legend .dot { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:middle; }
+  .legend .dot.green { background: var(--green); }
+  .legend .dot.red { background: var(--red); }
+  .legend .dot.amber { background: var(--amber); }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>BNA1 Transfer Order Dashboard</h1>
+    <div class="sub">Source: EWR1 → Destination: BNA1 · Auto-saves to your browser</div>
+  </div>
+  <div class="actions">
+    <button id="btn-clear" class="ghost" title="Clear all entered quantities">Reset Qty</button>
+    <button id="btn-export-csv">Export CSV</button>
+    <button id="btn-export-to" class="primary">Export TO (pending approval)</button>
+  </div>
+</header>
+
+<main>
+  <section class="kpis" id="kpis"></section>
+
+  <div class="grid">
+    <div class="card">
+      <h3>
+        <span>Transfer Order Builder</span>
+        <span class="legend">
+          <span><span class="dot green"></span>Available</span>
+          <span><span class="dot red"></span>Not available for TO</span>
+          <span><span class="dot amber"></span>Risk flag</span>
+        </span>
+      </h3>
+      <div class="toolbar">
+        <input type="text" id="search" placeholder="Search product, brand, UUID…" />
+        <select id="filter-category"><option value="">All Categories</option></select>
+        <select id="filter-subcat"><option value="">All Sub-Categories</option></select>
+        <select id="filter-brand"><option value="">All Brands</option></select>
+        <select id="filter-status">
+          <option value="">All Items</option>
+          <option value="available">Available only</option>
+          <option value="unavailable">Not available only</option>
+          <option value="risk">Risk flagged</option>
+          <option value="hasqty">With Qty entered</option>
+        </select>
+        <span class="grow"></span>
+        <span class="chip" id="filter-count">0 of 0</span>
+      </div>
+      <div class="table-scroll">
+        <table id="items">
+          <thead>
+            <tr>
+              <th data-sort="product">Product <span class="arrow">▾</span></th>
+              <th data-sort="brand">Brand <span class="arrow">▾</span></th>
+              <th data-sort="category">Category <span class="arrow">▾</span></th>
+              <th data-sort="uom">UOM <span class="arrow">▾</span></th>
+              <th data-sort="source">Source <span class="arrow">▾</span></th>
+              <th data-sort="status">Status <span class="arrow">▾</span></th>
+              <th data-sort="qty" style="text-align:right;">Qty <span class="arrow">▾</span></th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <div class="card">
+        <h3>Items by Category</h3>
+        <div class="body"><div class="bar-list" id="cat-chart"></div></div>
+      </div>
+      <div class="card">
+        <h3>Top Brands</h3>
+        <div class="body"><div class="bar-list" id="brand-chart"></div></div>
+      </div>
+      <div class="card">
+        <h3>Audit · On TO with no utilization</h3>
+        <div class="body"><ul class="audit-list" id="audit-noutil"></ul></div>
+      </div>
+      <div class="card">
+        <h3>Audit · On TO with risk flag</h3>
+        <div class="body"><ul class="audit-list" id="audit-risk"></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <p class="footer-note">Quantities persist locally. Use <strong>Export TO</strong> to generate the final CSV (only items with Qty &gt; 0 and Available status).</p>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script id="bna1-data" type="application/json">{"items":[{"warehouse":"BNA1","brand":"1883","product":"1883 Syrup Pump (Glass)","uom":"Case (150x)","category":"Caf\u00e9 Supplies","subCategory":"Coffee Supplies","uuid":"bf1851c3-19f7-43aa-affd-08a8fef5eb39","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":true,"auditRisk":false},{"warehouse":"BNA1","brand":"1883","product":"1883 Syrup Pump (Plastic)","uom":"Case (250x)","category":"Caf\u00e9 Supplies","subCategory":"Coffee Supplies","uuid":"b7f139bb-8e00-41ce-b92a-d366796b0ecd","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"AmerCareRoyal","product":"AmerCareRoyal Black Beverage Plugs 400ct","uom":"Case (2000x)","category":"Paper & Disposables","subCategory":"Drink Plugs","uuid":"5abedc28-fffb-4f1d-81e8-9f433e27a342","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Boxed Water","product":"Boxed Water 16.9oz","uom":"Case (24x)","category":"Beverages","subCategory":"Water","uuid":"3266ecfc-79f4-40a9-be63-2f8096077a07","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":true,"auditRisk":false},{"warehouse":"BNA1","brand":"Busy Bee Honey","product":"Busy Bee Clover Honey 5lb Bottle","uom":"Case (6x)","category":"Syrups & Smoothies","subCategory":"Sugar & Sweetener","uuid":"e0c8cb39-5b20-450e-8335-0924d3baf614","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Califia Farms","product":"Califia Farms Barista Almond Milk 32oz","uom":"Case (12x)","category":"Alternative Milk","subCategory":"Nut","uuid":"7337eebb-4a48-4fef-894b-d41188665b96","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Califia Farms","product":"Califia Farms Barista Coconut Milk 32oz","uom":"Case (12x)","category":"Alternative Milk","subCategory":"Nut","uuid":"ef962bda-1f3b-405c-91d9-ab0cd04b2987","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Califia Farms","product":"Califia Farms Barista Oat Milk 32oz","uom":"Case (12x)","category":"Alternative Milk","subCategory":"Oat","uuid":"2d05faec-fbce-4a35-b6bf-0df8492976a3","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Califia Farms","product":"Califia Farms Barista Unsweetened Almond Milk 32oz","uom":"Case (6x)","category":"Alternative Milk","subCategory":"Nut","uuid":"190b0d78-af45-4efc-b5fa-6733b7062943","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Cappuccine","product":"Cappuccine Caramel Latte 3lb Bag","uom":"Case (5x)","category":"Syrups & Smoothies","subCategory":"Latte & Frappe Mixes","uuid":"e3b952f8-b59d-4bf9-9284-a0ca28139378","source":"EWR1","qty":null,"available":false,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Cappuccine","product":"Cappuccine Chocolate Decadence 3lb Bag","uom":"Case (5x)","category":"Syrups & Smoothies","subCategory":"Latte & Frappe Mixes","uuid":"166a0019-304a-4946-a395-577ef1676d51","source":"EWR1","qty":null,"available":false,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Cappuccine","product":"Cappuccine Matcha Green Tea 3lb bag","uom":"Case (5x)","category":"Tea & Chai","subCategory":"Matcha","uuid":"d07579f3-3ccd-498c-9bc6-c296b73f1764","source":"EWR1","qty":null,"available":false,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Cappuccine","product":"Cappuccine Mocha Frappe 3lb Bag","uom":"Case (5x)","category":"Syrups & Smoothies","subCategory":"Latte & Frappe Mixes","uuid":"e59d0d92-21b2-4aac-ad76-b6db5ab68adc","source":"EWR1","qty":null,"available":false,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Cappuccine","product":"Cappuccine Neutral Base 3lb Bag","uom":"Case (5x)","category":"Syrups & Smoothies","subCategory":"Latte & Frappe Mixes","uuid":"f644416c-fa7d-48e4-a8f8-225b025e75d7","source":"EWR1","qty":null,"available":false,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Cappuccine","product":"Cappuccine Vanilla Express 3lb Bag","uom":"Case (5x)","category":"Syrups & Smoothies","subCategory":"Latte & Frappe Mixes","uuid":"3505aee9-a924-4f89-bada-7a7b90af8c5f","source":"EWR1","qty":null,"available":false,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Chlorophyll Water","product":"Chlorophyll Water 16.9oz","uom":"Case (12x)","category":"Beverages","subCategory":"Water","uuid":"3062f5d3-7244-4845-b2b2-0372b2a1fd7a","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Coffee Blossom Honey","product":"Coffee Blossom Honey - 1/2 Gallon Jug","uom":"Each","category":"Syrups & Smoothies","subCategory":"Sugar & Sweetener","uuid":"1d96ba80-75cf-461e-bca9-6d142a3e4272","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Coffee Blossom Honey","product":"Coffee Blossom Honey - 12oz Jar","uom":"Case (12x)","category":"Syrups & Smoothies","subCategory":"Sugar & Sweetener","uuid":"7cdee1b1-bc81-4da1-83f0-edef125917d4","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"David Rio","product":"David Rio Tiger Spice 4, 1lb Bags","uom":"Case (4x)","category":"Tea & Chai","subCategory":"Chai","uuid":"721a573a-5825-4cd8-a75e-98d8f9dd76f7","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Dona","product":"Dona Amber Assam 360g Bag","uom":"Each","category":"Tea & Chai","subCategory":"Tea","uuid":"4ce50685-3b07-47ad-9faf-3112251bb166","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Dona","product":"Dona Amber Assam Sachets","uom":"Case (50x)","category":"Tea & Chai","subCategory":"Tea","uuid":"449e415b-8300-4417-8178-aacba0ebad36","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Dona","product":"Dona Ceremonial Matcha 100g Bag","uom":"Each","category":"Tea & Chai","subCategory":"Matcha","uuid":"e5d8b229-9784-4787-8ece-847fa714eb22","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Dona","product":"Dona Chai 1:1 Concentrate 64oz","uom":"Case (4x)","category":"Tea & Chai","subCategory":"Chai","uuid":"793294cf-dab6-471a-bd3a-28c8abdfdea6","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Dona","product":"Dona Flirt 240g Bag","uom":"Each","category":"Tea & Chai","subCategory":"Tea","uuid":"1d1793b8-c015-406b-bb46-2404cf543bde","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Dona","product":"Dona Flirt Sachets","uom":"Case (50x)","category":"Tea & Chai","subCategory":"Tea","uuid":"e2005dd8-1911-455e-8b32-944b00c2b3e2","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Dona","product":"Dona Grayscale 360g Bag","uom":"Each","category":"Tea & Chai","subCategory":"Tea","uuid":"50b71c59-0aa0-4de2-ac0e-f45f4e4dbe99","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Dona","product":"Dona Grayscale Sachets","uom":"Case (50x)","category":"Tea & Chai","subCategory":"Tea","uuid":"22b1e45e-1c14-4e04-9f58-bbdf56c44a20","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Dona","product":"Dona Hari River Mint 200g Bag","uom":"Each","category":"Tea & Chai","subCategory":"Tea","uuid":"bcdacd91-1c54-45ae-ace0-1bb3614230b9","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Dona","product":"Dona Hari River Mint Sachets","uom":"Case (50x)","category":"Tea & Chai","subCategory":"Tea","uuid":"aa006b53-6da5-4681-b42f-4d7ade52e080","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Dona","product":"Dona Rising Green 280g Bag","uom":"Each","category":"Tea & Chai","subCategory":"Tea","uuid":"54c93286-edb4-4c46-8420-88599070ec4b","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Dona","product":"Dona Rising Green Sachets","uom":"Case (50x)","category":"Tea & Chai","subCategory":"Tea","uuid":"ea9512c7-48b0-437a-8870-379fe0b5bf77","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Dona","product":"Dona Supertwist 360g Bag","uom":"Each","category":"Tea & Chai","subCategory":"Tea","uuid":"45aa1699-473a-43eb-8fae-db91a83ce125","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Dona","product":"Dona Supertwist Sachets","uom":"Case (50x)","category":"Tea & Chai","subCategory":"Tea","uuid":"c436d036-72d5-4bf4-af54-445e723f559f","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"ecoStick","product":"ecoStick Green - Stevia","uom":"Case (2000x)","category":"Syrups & Smoothies","subCategory":"Sugar & Sweetener","uuid":"7a51adf0-6277-4df5-9639-0cc536a265bc","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"ecoStick","product":"ecoStick Organic Raw Cane Sugar","uom":"Case (2000x)","category":"Syrups & Smoothies","subCategory":"Sugar & Sweetener","uuid":"0ad0a21c-1d7c-4a48-a385-d78789e03ed3","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"ecoStick","product":"ecoStick Organic White Natural Cane Sugar","uom":"Case (2000x)","category":"Syrups & Smoothies","subCategory":"Sugar & Sweetener","uuid":"105eb2bc-cb9c-468f-8014-fed9a9d69f33","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"ecoStick","product":"ecoStick Pink - Saccarin","uom":"Case (2000x)","category":"Syrups & Smoothies","subCategory":"Sugar & Sweetener","uuid":"4cafe217-3c1b-46b3-a057-1a9a61e11f39","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"ecoStick","product":"ecoStick Sample Box","uom":"Each","category":"Syrups & Smoothies","subCategory":"Sugar & Sweetener","uuid":"a903df48-b6ba-4980-94a6-792c6978a178","source":"EWR1","qty":null,"available":false,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"ecoStick","product":"ecoStick Yellow - Sucralose","uom":"Case (2000x)","category":"Syrups & Smoothies","subCategory":"Sugar & Sweetener","uuid":"df654e5d-ec87-44f3-a690-aa5387a3bc1a","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Ghirardelli","product":"Ghirardelli Caramel Sauce 87.3oz Bottle","uom":"Case (6x)","category":"Syrups & Smoothies","subCategory":"Sauces","uuid":"4565d07a-4589-4a76-857e-058d5b39e4f1","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Ghirardelli","product":"Ghirardelli Chocolate Frappe 3lb Can","uom":"Case (6x)","category":"Syrups & Smoothies","subCategory":"Latte & Frappe Mixes","uuid":"1d8f5c83-9a87-4010-ba6c-c1170b79258e","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Ghirardelli","product":"Ghirardelli Chocolate Sauce 87.3oz Bottle","uom":"Case (6x)","category":"Syrups & Smoothies","subCategory":"Sauces","uuid":"8afced0b-7168-4d40-8fc7-6b8a33529941","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Ghirardelli","product":"Ghirardelli Frozen Hot Cocoa Frappe Mix 3lb Can","uom":"Case (6x)","category":"Syrups & Smoothies","subCategory":"Latte & Frappe Mixes","uuid":"ae3752c3-6e98-41e8-9187-0c26972fc885","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Ghirardelli","product":"Ghirardelli Pump","uom":"Case (6x)","category":"Caf\u00e9 Supplies","subCategory":"Coffee Supplies","uuid":"fcd082a9-011e-4e9f-bbef-2131a03bc37a","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Ghirardelli","product":"Ghirardelli Sweet Ground Chocolate Powder 3lb Can","uom":"Case (6x)","category":"Syrups & Smoothies","subCategory":"Chocolate Powders","uuid":"f38168a8-8d69-4618-93b0-fec038704986","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Ghirardelli","product":"Ghirardelli Sweet Ground White Chocolate Powder 3lb Can","uom":"Case (6x)","category":"Syrups & Smoothies","subCategory":"Chocolate Powders","uuid":"e00c4bbb-b990-4b5f-a45e-4f0a89abc8a3","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Ghirardelli","product":"Ghirardelli Vanilla Frappe 3lb Can","uom":"Case (6x)","category":"Syrups & Smoothies","subCategory":"Latte & Frappe Mixes","uuid":"e39b5696-ac60-4b44-bfb9-86d9e7eec6f4","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Ghirardelli","product":"Ghirardelli White Chocolate Sauce 87.3oz Bottle","uom":"Case (6x)","category":"Syrups & Smoothies","subCategory":"Sauces","uuid":"ac6d4b42-a063-47a6-b0f2-63b06b46f3ec","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Ghirardelli","product":"Ghirardelli White Frappe 3lb Can","uom":"Case (6x)","category":"Syrups & Smoothies","subCategory":"Latte & Frappe Mixes","uuid":"59b1d9ef-67e4-4bfd-b166-69567e6afd52","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Hal's New York","product":"Hal's Chips Barbecue - 2oz Bag","uom":"Case (24x)","category":"Grab & Go","subCategory":"Packaged Goods","uuid":"5f1e6379-3467-4268-b16a-7a8609e2ec91","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Hal's New York","product":"Hal's Chips Original Sea Salt - 2oz Bag","uom":"Case (24x)","category":"Grab & Go","subCategory":"Packaged Goods","uuid":"01aae5b7-6ab5-4e56-b42c-9403029aa11f","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Hal's New York","product":"Hal's Chips Sea Salt & Vinegar - 2oz Bag","uom":"Case (24x)","category":"Grab & Go","subCategory":"Packaged Goods","uuid":"c397d271-47b7-4a7f-8ee7-2c02da85beec","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Hal's New York","product":"Hal's Chips Sour Cream & Onion - 2oz Bag","uom":"Case (24x)","category":"Grab & Go","subCategory":"Packaged Goods","uuid":"c1e105fb-3711-4dcf-80ef-b2ff61b2cb10","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Harmony Leaf","product":"Harmony Leaf Bamboo Scoop","uom":"Case (25x)","category":"Cafe Supplies","subCategory":"Coffee Supplies","uuid":"b568702c-4cb0-4393-96bf-e3d3412b6ffc","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Harmony Leaf","product":"Harmony Leaf Bamboo Whisk","uom":"Case (25x)","category":"Caf\u00e9 Supplies","subCategory":"Coffee Supplies","uuid":"b1431f34-571c-40e1-9a86-cfd1cdae84e8","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Harmony Leaf","product":"Harmony Leaf Bamboo Whisk Holder","uom":"Case (25x)","category":"Cafe Supplies","subCategory":"Coffee Supplies","uuid":"0a988f82-4a5f-4974-9068-45f8f6f12967","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Hollander","product":"Hollander Caramel Sauce 64oz","uom":"Case (6x)","category":"Syrups & Smoothies","subCategory":"Sauces","uuid":"2c257980-c895-4b87-afa7-0f42057f4cf5","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Hollander","product":"Hollander Dutched Chocolate Sauce 64oz","uom":"Case (6x)","category":"Syrups & Smoothies","subCategory":"Sauces","uuid":"a3f1efb2-b7d1-4436-9b67-a4d38ad92912","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Hollander","product":"Hollander Sauce Pump","uom":"Case (24x)","category":"Caf\u00e9 Supplies","subCategory":"Coffee Supplies","uuid":"887971e8-d7ee-44b8-af3e-26aa3f04f77c","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Hollander","product":"Hollander White Chocolate Sauce 64oz","uom":"Case (6x)","category":"Syrups & Smoothies","subCategory":"Sauces","uuid":"03a7bcef-1447-44b1-8a84-956b54c1c29b","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Humankind","product":"Humankind Apple Juice 10oz","uom":"Case (12x)","category":"Beverages","subCategory":"Juice","uuid":"0209adad-f9f8-4009-a406-44adc40413cf","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Humankind","product":"Humankind Orange Juice 10oz","uom":"Case (12x)","category":"Beverages","subCategory":"Juice","uuid":"39463c99-4668-4540-8843-cf62ab6a669f","source":"EWR1","qty":20.0,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Imperial Dade","product":"Fabrikal PET Sip-Thru Cold Lid, 16-24 oz","uom":"Case (1000x)","category":"Paper & Disposables","subCategory":"Lids","uuid":"ceb03d2c-888b-4899-8a83-f47316b62422","source":"EWR1","qty":20.0,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Imperial Dade","product":"Pactiv Clear Deli Container/Lid Combo, 12oz","uom":"Case (240x)","category":"Paper & Disposables","subCategory":"Take-Out Packaging","uuid":"8708da7d-1d44-4590-9b6d-1a17dec9931b","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Imperial Dade","product":"Pactiv Clear Deli Container/Lid Combo, 16oz","uom":"Case (240x)","category":"Paper & Disposables","subCategory":"Take-Out Packaging","uuid":"9044606d-3207-411c-a674-639b2ecb1e48","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Imperial Dade","product":"Pactiv Clear Deli Container/Lid Combo, 32oz","uom":"Case (240x)","category":"Paper & Disposables","subCategory":"Take-Out Packaging","uuid":"b0d20025-5e7f-4075-87dd-b51cb848c770","source":"EWR1","qty":null,"available":false,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Imperial Dade","product":"Pactiv Clear Deli Container/Lid Combo, 8oz","uom":"Case (240x)","category":"Paper & Disposables","subCategory":"Take-Out Packaging","uuid":"ba0c263e-b51f-427e-823b-b485e151e99f","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Java Jacket","product":"Java Jacket Eco II Kraft Hot Cup Sleeves, 12-20oz","uom":"Case (1000x)","category":"Paper & Disposables","subCategory":"Sleeves","uuid":"bfc7cf9e-dea5-4e6e-96f0-6deb0c89b9f9","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat 4-Cup Molded Fiber Carrier for 8-32oz Cups","uom":"Case (300x)","category":"Paper & Disposables","subCategory":"Cup Carriers","uuid":"efcc3561-5572-4149-b2bb-09beb2d1f2a1","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat Black Domed Hot Lid, 10-24oz","uom":"Case (1000x)","category":"Paper & Disposables","subCategory":"Lids","uuid":"cabc0775-c726-41b5-9bba-52acae7cdd0c","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat Black Domed Hot Lid, 8oz","uom":"Case (1000x)","category":"Paper & Disposables","subCategory":"Lids","uuid":"aba9ac8f-81a0-4a69-9537-3e516b89ba1c","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat Double-Walled Hot Cup 12oz","uom":"Case (500x)","category":"Paper & Disposables","subCategory":"Cups","uuid":"a55e68a7-14e7-49eb-bed6-b6113c54b03e","source":"EWR1","qty":null,"available":false,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat Double-Walled Hot Cup 16oz","uom":"Case (500x)","category":"Paper & Disposables","subCategory":"Cups","uuid":"e7f5e8b2-e949-4c61-b00d-e6e11d7d3516","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat Double-Walled Hot Cup 8oz","uom":"Case (500x)","category":"Paper & Disposables","subCategory":"Cups","uuid":"a9bd0dc4-6d04-4442-b336-16123fa739af","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat Flat PET Lid, 12-24oz","uom":"Case (1000x)","category":"Paper & Disposables","subCategory":"Lids","uuid":"63bcf2e9-4734-4368-a15d-320a2b0cf246","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat Hot Cup 12oz","uom":"Case (1000x)","category":"Paper & Disposables","subCategory":"Cups","uuid":"d05e7f15-d376-4d6d-acd9-ad73dba6f1ff","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat Hot Cup 16oz","uom":"Case (1000x)","category":"Paper & Disposables","subCategory":"Cups","uuid":"22214d24-ae2b-4cd3-b666-34d370ee0bac","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat Hot Cup 20oz","uom":"Case (600x)","category":"Paper & Disposables","subCategory":"Cups","uuid":"d351c518-304d-41d6-9a05-8635a929165e","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat Hot Cup 8oz","uom":"Case (1000x)","category":"Paper & Disposables","subCategory":"Cups","uuid":"b022b477-06af-48b3-8d7a-c3b706c1253d","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat Kraft Fold-To-Go Container #1, 30 fl oz","uom":"Case (450x)","category":"Paper & Disposables","subCategory":"Take-Out Packaging","uuid":"cd21be2b-147f-447d-87dc-0f0ca1f1c615","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat Kraft Fold-To-Go Container #8, 48 fl oz","uom":"Case (300x)","category":"Paper & Disposables","subCategory":"Take-Out Packaging","uuid":"b05da09a-fc54-440a-ae81-c7a19fa3376e","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat Low Density 33-39 Gallon Trash Can Liner, 33\" x 39\", 1.2 Mil","uom":"Case (100x)","category":"Cleaning Supplies","subCategory":"Trash Bags","uuid":"2a518e56-662b-44b9-87e6-bbf12bdb6ece","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat PET Cold Cup 12oz","uom":"Case (1000x)","category":"Paper & Disposables","subCategory":"Cups","uuid":"d05e7f15-d376-4d6d-acd9-ad73dba6f1ff","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat PET Cold Cup 16oz","uom":"Case (1000x)","category":"Paper & Disposables","subCategory":"Cups","uuid":"22214d24-ae2b-4cd3-b666-34d370ee0bac","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat PET Cold Cup 20oz","uom":"Case (600x)","category":"Paper & Disposables","subCategory":"Cups","uuid":"d351c518-304d-41d6-9a05-8635a929165e","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat PET Cold Cup 8oz","uom":"Case (1000x)","category":"Paper & Disposables","subCategory":"Cups","uuid":"781be93b-3c91-4109-9899-2076275dc81f","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat PET Strawless Sipper Lid, 12-24oz","uom":"Case (1000x)","category":"Paper & Disposables","subCategory":"Lids","uuid":"e84c0859-3f56-4480-b881-b013f351333c","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat PFAS Free Compostable Bagasse Hinged Container, 9'' x 6'' (KE-BHC96-1CFF)","uom":"Case (200x)","category":"Paper & Disposables","subCategory":"Food Wrap","uuid":"2359cef4-03eb-43c3-92b7-bec063578568","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat Portion Cup 2oz","uom":"Case (2500x)","category":"Paper & Disposables","subCategory":"Take-Out Packaging","uuid":"8ead0f47-4322-4aca-97da-a274cc21fced","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat Portion Cup Lid, 1-2oz","uom":"Case (2500x)","category":"Paper & Disposables","subCategory":"Take-Out Packaging","uuid":"135d0995-680f-4c16-a631-8d47c0ef27e5","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat PP Black Medium-Weight Forks","uom":"Case (1000x)","category":"Paper & Disposables","subCategory":"Cutlery","uuid":"bbafb30a-518c-47d0-a942-8d8ef9a1366e","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat PP Black Medium-Weight Knives","uom":"Case (1000x)","category":"Paper & Disposables","subCategory":"Cutlery","uuid":"dc6b84ef-b5a8-4367-884d-f35a63740cf6","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat PP Black Medium-Weight Tea Spoons","uom":"Case (1000x)","category":"Paper & Disposables","subCategory":"Cutlery","uuid":"27e1bfd3-8781-49ae-ac9d-264337e54568","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat Stir Straw 5.25\", Unwrapped, Black","uom":"Case (10000x)","category":"Paper & Disposables","subCategory":"Straws","uuid":"4e0bb462-7d7d-4529-b2b6-5e17c2a98e01","source":"SUB-DISTRO","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat White Domed Hot Lid, 10-24oz","uom":"Case (1000x)","category":"Paper & Disposables","subCategory":"Lids","uuid":"e7826749-5501-46f6-8640-1f44744ea6a1","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat White Domed Hot Lid, 8oz","uom":"Case (1000x)","category":"Paper & Disposables","subCategory":"Lids","uuid":"16f56985-6a0e-4468-8338-0af558437d9f","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Karat","product":"Karat Wrap N' Go Foodservice Film with Serrated Cutter, 12\" x 2000'","uom":"Each","category":"Paper & Disposables","subCategory":"Food Wrap","uuid":"9e1e7be2-bbf3-4a16-9470-cfbdeb07a4d4","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Lenka Bar","product":"Lenka Bar - Berry Omega","uom":"Case (12x)","category":"Grab & Go","subCategory":"Packaged Goods","uuid":"ec4b645c-cd21-4d91-bfcc-c32eb7d89093","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Lenka Bar","product":"Lenka Bar - Chocolate Peanut Butter","uom":"Case (12x)","category":"Grab & Go","subCategory":"Packaged Goods","uuid":"dfe1b559-6835-4c68-af30-04cf1b20b355","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Lenka Bar","product":"Lenka Bar - Nuts & Berries","uom":"Case (12x)","category":"Grab & Go","subCategory":"Packaged Goods","uuid":"ca484a58-bbcc-4785-bbac-70cffdbbaae5","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Lenka Bar","product":"Lenka Bar - Peanut Butter","uom":"Case (12x)","category":"Grab & Go","subCategory":"Packaged Goods","uuid":"b8e63ab9-9f40-4dd7-b8d0-e9dd4ad1eed9","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Lenka Bar","product":"Lenka Berry - Cranberry & Chocolate","uom":"Case (12x)","category":"Grab & Go","subCategory":"Packaged Goods","uuid":"235afe8b-9d4d-4562-a2a0-a7db43ae3bd5","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Liquid Death","product":"Liquid Death Mountain Water 19.2oz","uom":"Case (24x)","category":"Beverages","subCategory":"Water","uuid":"404ef541-aa40-42a3-a1c2-03976344bf44","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Liquid Death","product":"Liquid Death Sparkling Water 19.2oz","uom":"Case (24x)","category":"Beverages","subCategory":"Water","uuid":"6a59930e-0898-487a-ba4f-b1a2e4b0aaf2","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Lotus Plant Energy","product":"Lotus 1/2oz Pump","uom":"Each","category":"Caf\u00e9 Supplies","subCategory":"Coffee Supplies","uuid":"987af60d-ed9d-4f7d-b985-ae16194c8d2e","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Lotus Plant Energy","product":"Lotus 1oz Pump","uom":"Each","category":"Caf\u00e9 Supplies","subCategory":"Coffee Supplies","uuid":"dc06091b-30a9-4cd7-8741-510e5549efb6","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Maine Root Beverages","product":"Maine Root Root Beer 24/12 oz","uom":"Case (24x)","category":"Beverages","subCategory":"Soft Drinks","uuid":"704dba89-c303-4040-9eed-1e83085a74da","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Minor Figures","product":"Minor Figures Barista Oat Milk 32oz","uom":"Case (6x)","category":"Alternative Milk","subCategory":"Oat","uuid":"8e4232e5-cd8f-406d-a888-9cf20df7d602","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Minor Figures","product":"Minor Figures Organic Barista Oat 32oz","uom":"Case (6x)","category":"Alternative Milk","subCategory":"Oat","uuid":"314d5a79-abdc-44b0-abbd-32f35ffbe7ea","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Mister Agave","product":"Mister Agave Compostable Agave Straws, Wrapped, 8.27\"","uom":"Case (2000x)","category":"Paper & Disposables","subCategory":"Straws","uuid":"1838deb7-2471-4813-b7a9-3e4ed47588ce","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Mocafe","product":"Mocafe Azteca D'Oro Mexican Spiced Cocoa 3lb Can","uom":"Case (4x)","category":"Syrups & Smoothies","subCategory":"Chocolate Powders","uuid":"bc132ff4-50e3-4b6a-a9f4-a7e1d826494d","source":"EWR1","qty":null,"available":false,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Monin","product":"Monin Almond Syrup 750mL Glass","uom":"Case (12x)","category":"Syrups & Smoothies","subCategory":"Syrups","uuid":"1d4f6a55-6940-4f2c-bbb6-6d198f201885","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Monin","product":"Monin Banana Syrup 750ml Glass","uom":"Case (12x)","category":"Syrups & Smoothies","subCategory":"Syrups","uuid":"cd7f7a7d-71db-4fd4-9254-bab37cecbb5b","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Monin","product":"Monin Caramel Sauce 64oz","uom":"Case (4x)","category":"Syrups & Smoothies","subCategory":"Sauces","uuid":"0caa33ba-94b2-4e21-bc1f-d57bb3d29049","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Monin","product":"Monin Dark Chocolate Sauce 64oz","uom":"Case (4x)","category":"Syrups & Smoothies","subCategory":"Sauces","uuid":"a1d36906-f3d8-4331-9954-46717d9cd0f3","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Monin","product":"Monin Glass Bottle Pump","uom":"Each","category":"Caf\u00e9 Supplies","subCategory":"Coffee Supplies","uuid":"ad0a5813-0981-432a-abfd-19786e44512c","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Monin","product":"Monin Organic Honey Sweetener, 1L Plastic","uom":"Case (4x)","category":"Syrups & Smoothies","subCategory":"Sugar & Sweetener","uuid":"c9e4f317-8961-4358-94a5-7c41a213cee1","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Monin","product":"Monin Plastic Bottle Pump","uom":"Each","category":"Caf\u00e9 Supplies","subCategory":"Coffee Supplies","uuid":"2a23090c-ff0d-4dc6-a6d2-90bbf7746635","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Monin","product":"Monin Sauce Pump for Caramel & Dulce de Leche Sauce 1/2oz","uom":"Each","category":"Caf\u00e9 Supplies","subCategory":"Coffee Supplies","uuid":"142c4f3e-02f1-4346-adcb-a5ec52d4aa91","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Monin","product":"Monin Sauce Pump for Dark Chocolate Sauce 1/2oz","uom":"Each","category":"Caf\u00e9 Supplies","subCategory":"Coffee Supplies","uuid":"f87ec28c-333a-4614-8b3c-fba70e319c74","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Monin","product":"Monin Sauce Pump for Sugar-Free DarkChocolate Sauce 1/2oz","uom":"Each","category":"Caf\u00e9 Supplies","subCategory":"Coffee Supplies","uuid":"ef6ef871-584f-4ee5-ac01-d06c5ae083f5","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Monin","product":"Monin Sauce Pump for White Chocolate Sauce 1/2oz","uom":"Each","category":"Caf\u00e9 Supplies","subCategory":"Coffee Supplies","uuid":"5f13e08e-a4ca-46fb-a52b-d47513986846","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Monin","product":"Monin Spiced Brown Sugar Syrup 750ml Glass","uom":"Case (12x)","category":"Syrups & Smoothies","subCategory":"Syrups","uuid":"68893a92-4510-47f9-a9da-745d151940db","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Monin","product":"Monin WhiteChocolate Sauce 64oz","uom":"Case (4x)","category":"Syrups & Smoothies","subCategory":"Sauces","uuid":"a60a59a2-770c-4454-8187-b34c2c50f870","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Mooala","product":"Mooala Barista Banana Milk 32oz","uom":"Case (6x)","category":"Alternative Milk","subCategory":"Trendy Alts","uuid":"931f1b06-8897-4256-81fc-8c2e48df6031","source":"EWR1","qty":null,"available":false,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Mylk Labs","product":"Mylk Labs Banana Nut Oatmeal Cup 1.85oz","uom":"Case (6x)","category":"Grab & Go","subCategory":"Packaged Goods","uuid":"9677f5e7-d053-4218-a2c1-041b7f8de2dc","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":true},{"warehouse":"BNA1","brand":"Mylk Labs","product":"Mylk Labs Blueberry Maple Oatmeal Cup 1.83oz","uom":"Case (6x)","category":"Grab & Go","subCategory":"Packaged Goods","uuid":"cd8d2650-e8a0-49ef-bab6-00e47d5eee1a","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Mylk Labs","product":"Mylk Labs Coffee Oatmeal Cup 1.83oz","uom":"Case (6x)","category":"Grab & Go","subCategory":"Packaged Goods","uuid":"c71f37d6-8450-4b50-adf4-a4acc33bc53d","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Mylk Labs","product":"Mylk Labs Nut Free Apple Cinnamon Oatmeal Cup 1.9oz","uom":"Case (6x)","category":"Grab & Go","subCategory":"Packaged Goods","uuid":"21aa9feb-82fa-4c5f-944e-ffbb4bc9ede0","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":true},{"warehouse":"BNA1","brand":"Mylk Labs","product":"Mylk Labs Nut Free Maple Strawberry Oatmeal Cup 1.86oz","uom":"Case (6x)","category":"Grab & Go","subCategory":"Packaged Goods","uuid":"d529f671-9846-4a22-b9a1-086722d9450b","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":true},{"warehouse":"BNA1","brand":"Mylk Labs","product":"Mylk Labs Roasted Almond Oatmeal Cup 1.88oz","uom":"Case (6x)","category":"Grab & Go","subCategory":"Packaged Goods","uuid":"def4478f-f3e5-4524-b153-2e63a07097c0","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"NuMilk","product":"NuMilk - Barista Almond 8.75oz Pouch (Makes 64oz)","uom":"Case (48x)","category":"Alternative Milk","subCategory":"Nut","uuid":"b72a1b22-fe87-4d99-9e72-6531ce99a3d2","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"NuMilk","product":"NuMilk - Barista Oat 8.75oz Pouch (Makes 64oz)","uom":"Case (48x)","category":"Alternative Milk","subCategory":"Nut","uuid":"30ba873d-c3dd-48b6-b4d0-28bdcedf81dc","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"NuMilk","product":"NuMilk - Barista Pistachio 8.75oz Pouch (Makes 64oz)","uom":"Case (24x)","category":"Alternative Milk","subCategory":"Nut","uuid":"e168db63-7e1c-451c-92d6-b3aa52ebdc64","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Oatly","product":"Oatly Barista Oat Milk 32oz","uom":"Case (12x)","category":"Alternative Milk","subCategory":"Oat","uuid":"6e4d348f-0bd4-49d2-a361-6b348ff2aaf3","source":"EWR1","qty":68.0,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Odeko","product":"Odeko Pastry Bag, 6.5\" x 1\" x 8\"","uom":"Case (2000x)","category":"Paper & Disposables","subCategory":"Take-Out Packaging","uuid":"a262436f-4f9c-4f3b-84b0-e0795931afa4","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Olipop","product":"Olipop Prebiotic Soda - Cherry Cola 12fl oz","uom":"Case (12x)","category":"Beverages","subCategory":"Soft Drinks","uuid":"1bea7a6e-ca3f-481d-a66e-330ec1db7113","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Olipop","product":"Olipop Prebiotic Soda - Classic Grape 12fl oz","uom":"Case (12x)","category":"Beverages","subCategory":"Soft Drinks","uuid":"eadabef3-e6f4-4ae9-8787-1dcca300220b","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Olipop","product":"Olipop Prebiotic Soda - Classic Root Beer 12 fl oz (Shelf Stable Sleek Cans)","uom":"Case (12x)","category":"Beverages","subCategory":"Soft Drinks","uuid":"a02379be-89c7-49f1-821c-c095e9e53420","source":"EWR1","qty":null,"available":false,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Olipop","product":"Olipop Prebiotic Soda - Cream Soda 12 fl oz (Shelf Stable Sleek Cans)","uom":"Case (12x)","category":"Beverages","subCategory":"Soft Drinks","uuid":"070abe04-bfc1-4ea1-acae-9f275ada7c7c","source":"EWR1","qty":null,"available":false,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Olipop","product":"Olipop Prebiotic Soda - Strawberry Vanilla 12fl oz","uom":"Case (12x)","category":"Beverages","subCategory":"Soft Drinks","uuid":"d2d64271-1c61-4744-9b5d-75c2ed05f84d","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Open Water","product":"Open Water Sparkling Water, 16oz Aluminum Can","uom":"Case (24x)","category":"Beverages","subCategory":"Water","uuid":"a59c0cfe-5635-4e2c-884f-03354474421d","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Open Water","product":"Open Water Still Water, 16oz Aluminum Can","uom":"Case (24x)","category":"Beverages","subCategory":"Water","uuid":"946d3082-7230-4cb6-9440-0a9ec6ed443e","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Oregon Chai","product":"Oregon Chai 1:1 Original Chai Latte 32oz","uom":"Case (6x)","category":"Tea & Chai","subCategory":"Chai","uuid":"1212f4c8-d78e-4108-adc3-6c1b9207a9db","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Pacific Foods","product":"Pacific Barista Almond Milk 32oz","uom":"Case (12x)","category":"Alternative Milk","subCategory":"Nut","uuid":"91ffcf86-903e-4b1a-9f38-93458490f53b","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Pacific Foods","product":"Pacific Barista Coconut Milk 32oz","uom":"Case (12x)","category":"Alternative Milk","subCategory":"Nut","uuid":"d55119f6-21f0-44e5-a2dc-65d500763140","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Pacific Foods","product":"Pacific Barista Oat Milk 32oz","uom":"Case (12x)","category":"Alternative Milk","subCategory":"Oat","uuid":"87dbbd58-086f-42a6-b1d4-1338a9a2346e","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Pacific Foods","product":"Pacific Barista Soy Milk 32oz","uom":"Case (12x)","category":"Alternative Milk","subCategory":"Soy","uuid":"0bda54e6-d50e-4e3d-b733-7334dd3178a9","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"PBI","product":"Coffee-To-Go Box, 96oz","uom":"Case (25x)","category":"Paper & Disposables","subCategory":"Take-Out Packaging","uuid":"1dd56331-12fb-40e1-bcd0-3051380b8a6d","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Pure Bright","product":"Pure Bright Ultra Bleach 1 Gallon","uom":"Case (6x)","category":"Cleaning Supplies","subCategory":"Soap & Solutions","uuid":"7774e8ac-67a6-4ff4-860d-75d7acf34363","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Rishi","product":"Rishi 1:1 Organic London Fog Tea Concentrate 32oz","uom":"Case (12x)","category":"Tea & Chai","subCategory":"Chai","uuid":"6570ea2f-0aa9-4474-8196-ca1080464210","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Rishi","product":"Rishi 1:1 Organic Masala Chai Concentrate 32oz","uom":"Case (12x)","category":"Tea & Chai","subCategory":"Chai","uuid":"931f93a5-f2e6-4615-82d4-8f1d4cc542bb","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Rishi","product":"Rishi Botanicals Black Lemon, 12oz","uom":"Case (12x)","category":"Beverages","subCategory":"Bottled Tea & Coffee","uuid":"63d21ce3-36bb-4f9b-9ed8-a80051d586b9","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Rishi","product":"Rishi Botanicals Dandelion Ginger, 12oz","uom":"Case (12x)","category":"Beverages","subCategory":"Bottled Tea & Coffee","uuid":"2bbda8ad-d912-4467-84ae-c77d3845a1a5","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Rishi","product":"Rishi Botanicals Elderberry Maqui, 12oz","uom":"Case (12x)","category":"Beverages","subCategory":"Bottled Tea & Coffee","uuid":"df7a5608-bbfc-44f7-a48f-905598367fbb","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Rishi","product":"Rishi Botanicals Grapefruit Quince, 12oz","uom":"Case (12x)","category":"Beverages","subCategory":"Bottled Tea & Coffee","uuid":"3090867a-86c0-414e-be0a-c56f47e3a665","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Rishi","product":"Rishi Botanicals Schisandra Berry, 12oz","uom":"Case (12x)","category":"Beverages","subCategory":"Bottled Tea & Coffee","uuid":"e5289c77-a3a5-43f4-9d13-8a2774db0b36","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Rishi","product":"Rishi Tea Filters 100ct","uom":"Each","category":"Cafe Supplies","subCategory":"Coffee Supplies","uuid":"14691e0d-3625-4587-aad7-5a98eb6c00b1","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Rockline","product":"Brew Rite 13 x 5 Coffee Filters","uom":"Case (500x)","category":"Caf\u00e9 Supplies","subCategory":"Coffee Supplies","uuid":"c258175f-5567-4ea3-a2f2-1628b77bb792","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Rockline","product":"Brew Rite 14 x 5 Coffee Filters","uom":"Case (500x)","category":"Caf\u00e9 Supplies","subCategory":"Coffee Supplies","uuid":"45abb96d-e40d-41f7-bc36-468582b983e2","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Rockline","product":"Brew Rite 15 x 5 Coffee Filters","uom":"Case (500x)","category":"Caf\u00e9 Supplies","subCategory":"Coffee Supplies","uuid":"3dcdba58-b000-4c8b-a9a0-25cd38779da3","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Saratoga Spring Water","product":"Saratoga Sparkling Spring Water, 12oz","uom":"Case (24x)","category":"Beverages","subCategory":"Water","uuid":"f546f277-8654-4ce9-a0ff-49a9f7b883f4","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Saratoga Spring Water","product":"Saratoga Still Water, 12oz","uom":"Case (24x)","category":"Beverages","subCategory":"Water","uuid":"36b80598-4d38-4c0c-bf35-eb07d4dbf24c","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Simply Gum","product":"Simply Gum Mints Cinnamon Retail Box","uom":"Case (6x)","category":"Grab & Go","subCategory":"Packaged Goods","uuid":"5a727e4d-af4a-4eb0-863c-fcfdcd0f41c3","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Simply Gum","product":"Simply Gum Mints Ginger Retail Box","uom":"Case (6x)","category":"Grab & Go","subCategory":"Packaged Goods","uuid":"32ea6527-ddbb-4e86-a4a1-2f1ed7f396a8","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Simply Gum","product":"Simply Gum Mints Peppermint Retail Box","uom":"Case (6x)","category":"Grab & Go","subCategory":"Packaged Goods","uuid":"e82573f7-9d3c-4724-b729-cb2b117fcede","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Something & Nothing","product":"Something & Nothing Cucumber Seltzer, 11.2oz","uom":"Case (12x)","category":"Beverages","subCategory":"Soft Drinks","uuid":"4fbbbe5d-acbd-4722-a6fb-813eff8c8894","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":true,"auditRisk":false},{"warehouse":"BNA1","brand":"Something & Nothing","product":"Something & Nothing Hibiscus & Rose Seltzer, 11.2oz","uom":"Case (12x)","category":"Beverages","subCategory":"Soft Drinks","uuid":"871fe0eb-31a9-4493-8379-e0e3d6d7c28d","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":true,"auditRisk":false},{"warehouse":"BNA1","brand":"Something & Nothing","product":"Something & Nothing Pineapple & Pink Grapefruit Seltzer, 11.2oz","uom":"Case (12x)","category":"Beverages","subCategory":"Soft Drinks","uuid":"9d39f6fb-94ee-4984-84d2-6f17fa985931","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":true,"auditRisk":false},{"warehouse":"BNA1","brand":"Something & Nothing","product":"Something & Nothing Yuzu Seltzer, 11.2oz","uom":"Case (12x)","category":"Beverages","subCategory":"Soft Drinks","uuid":"b44b1c76-09a5-448a-bec8-b22e9623c8cd","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":true,"auditRisk":false},{"warehouse":"BNA1","brand":"Strange Water","product":"Strange Water Coconut Water 330ml Can","uom":"Case (24x)","category":"Beverages","subCategory":"Water","uuid":"feaf7a30-dc0a-4928-89d6-3ca525e3c265","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Strange Water","product":"Strange Water Sparkling Coconut Water 330ml Can","uom":"Case (24x)","category":"Beverages","subCategory":"Water","uuid":"c743c769-f76d-47a4-af15-70d851c31bb7","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Tache","product":"Tache Barista Pistachio Milk 32oz","uom":"Case (6x)","category":"Alternative Milk","subCategory":"Nut","uuid":"0d18dc40-a30d-49fb-8cc9-54adaddbd1f5","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Tenzo","product":"Tenzo Matcha Latte Mix 1kg Bag","uom":"Case (12x)","category":"Tea & Chai","subCategory":"Matcha","uuid":"1e830d21-48a0-4c2b-9197-4bc8fa2a3943","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Tenzo","product":"Tenzo Organic Ceremonial Matcha 400g Bag","uom":"Case (24x)","category":"Tea & Chai","subCategory":"Matcha","uuid":"01fe2e09-40cd-4f6f-a351-d4e0b1f86db5","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Tenzo","product":"Tenzo Organic Matcha 500g Bag","uom":"Case (24x)","category":"Tea & Chai","subCategory":"Matcha","uuid":"c5a92a6b-63bd-4f5a-86eb-29f580d68133","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"The Stroop Club","product":"Stroopwafel Chocolate Caramel 2-pack","uom":"Case (36x)","category":"Grab & Go","subCategory":"Packaged Goods","uuid":"30320282-768f-4354-9998-50fdb1a72d8e","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"The Stroop Club","product":"Stroopwafel Gluten-Free Caramel 2-pack","uom":"Case (36x)","category":"Grab & Go","subCategory":"Packaged Goods","uuid":"83e586f4-7e97-46c2-9fe5-57cc030480f5","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"The Stroop Club","product":"Stroopwafel Traditional Caramel 2-pack","uom":"Case (36x)","category":"Grab & Go","subCategory":"Packaged Goods","uuid":"ca42afcf-11e4-450a-8015-f68ea61bb550","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Toddy","product":"Toddy Cold Brew System Strainer","uom":"Each","category":"Caf\u00e9 Supplies","subCategory":"Coffee Supplies","uuid":"dcd81693-5369-428a-9ab1-d5ab30ec9d12","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Toddy","product":"Toddy Commercial Model Paper Filter pack","uom":"Case (50x)","category":"Caf\u00e9 Supplies","subCategory":"Coffee Supplies","uuid":"21db9c7f-d0f0-4bd5-b635-146956994887","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":true,"auditRisk":false},{"warehouse":"BNA1","brand":"Urnex","product":"Biocaf Coffee Machine Descaling Powder - 900g Jar","uom":"Case (6x)","category":"Cleaning Supplies","subCategory":"(Blanks)","uuid":"6960b80b-48b7-4b28-9de7-aec7f30427e6","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Urnex","product":"Urnex Caf\u00e9 Sprayz Coffee Equipment Cleaning Spray 15.2oz Bottle","uom":"Case (12x)","category":"Cleaning Supplies","subCategory":"(Blanks)","uuid":"d4b05f0f-7633-48f5-8783-bbaeafe8d9fc","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Urnex","product":"Urnex Cafiza Espresso Machine Cleaner Powser, 20oz","uom":"Case (12x)","category":"Cleaning Supplies","subCategory":"(Blanks)","uuid":"31d620c1-2654-4162-96bd-aa32c606ccab","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Urnex","product":"Urnex Cafiza Espresso Machine Cleaning Tablets Jar, 100/2g Tablets","uom":"Case (12x)","category":"Cleaning Supplies","subCategory":"(Blanks)","uuid":"bcf8f34b-a007-4312-8f43-47830f079516","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Urnex","product":"Urnex Complete Caf\u00e9 Liquid Sanitizer 32oz Bottle","uom":"Case (6x)","category":"Cleaning Supplies","subCategory":"(Blanks)","uuid":"b3b053f2-a15c-44aa-a72f-e9b1c76852f1","source":"EWR1","qty":null,"available":false,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Urnex","product":"Urnex Freez Ice Machine Cleaner 14oz Bottle","uom":"Case (12x)","category":"Cleaning Supplies","subCategory":"(Blanks)","uuid":"ecb97364-55eb-437f-afc7-dd655d3c2be3","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":true},{"warehouse":"BNA1","brand":"Urnex","product":"Urnex Grindz Grinder Cleaner 430g","uom":"Case (12x)","category":"Cleaning Supplies","subCategory":"(Blanks)","uuid":"399d6b92-a5e1-4803-9252-c08393b30404","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Urnex","product":"Urnex Rinza Milk Frother Cleaner 32oz Bottle","uom":"Case (6x)","category":"Cleaning Supplies","subCategory":"(Blanks)","uuid":"a5003723-4a90-4be9-82bb-11fdfb64b0d1","source":"EWR1","qty":5.0,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Urnex","product":"Urnex Tabz Z61 120ct Jar","uom":"Case (12x)","category":"Cleaning Supplies","subCategory":"(Blanks)","uuid":"fa0b7a54-0498-425a-8bbe-48eeff732bac","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Victoria Bay","product":"Kraft Dispenser Napkins, 2ply, 6.5 x 8\"","uom":"Case (6000x)","category":"Paper & Disposables","subCategory":"Napkins","uuid":"65fcfc4f-a38f-4e2e-a4ab-2b3ae374fe1f","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Victoria Bay","product":"Victoria Bay Register Tape Roll Thermal White, 220ft, 3.125\"","uom":"Case (50x)","category":"Paper & Disposables","subCategory":"Receipt Paper","uuid":"b5e1dbf4-ad49-496b-b7a4-25ebccfefe88","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Victoria Bay","product":"Victoria Bay White Paper Towel Roll, 2ply, 11\" x 7.8\"","uom":"Case (30x)","category":"Paper & Disposables","subCategory":"Toilet Paper & Paper Towels","uuid":"8d76bca4-8dbe-46ce-b6c1-d93bc3410284","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Hal's New York","product":"Hal's Pretzel's Original Twist, 1.75oz bag","uom":"Case (24x)","category":"Grab & Go","subCategory":"Packaged Goods","uuid":"e1ecbb9f-1f6e-41bd-9e43-b19618001a69","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Sandt's Honey","product":"Honey Bear - 12oz","uom":"Case (12x)","category":"Pantry Items","subCategory":"Baking","uuid":"fda033b7-6d7c-4e69-99dc-8490d779cc9c","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Torani","product":"Torani Puremade Caramel Sauce, 64oz","uom":"Case (4x)","category":"Syrups & Smoothies","subCategory":"Sauces","uuid":"337dd263-0854-457e-94b3-455459be6e25","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Torani","product":"Torani Puremade White Chocolate Sauce, 64oz","uom":"Case (4x)","category":"Syrups & Smoothies","subCategory":"Sauces","uuid":"c4f4cb9a-2484-4727-8f9e-189d88a9cc7f","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Torani","product":"Torani Puremade Dark Chocolate Sauce, 64oz","uom":"Case (4x)","category":"Syrups & Smoothies","subCategory":"Sauces","uuid":"ccf1e393-d158-4eeb-89b7-5f481912b178","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Monin","product":"Monin Pistachio Syrup 750mL Glass","uom":"Case (12x)","category":"Syrups & Smoothies","subCategory":"Syrups","uuid":"74ef30fb-0cab-49e5-ace5-1501e6566858","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Island Rose","product":"Island Rose 5:1 Premium Lemonade 64 oz. Bottle","uom":"Case (4x)","category":"Syrups & Smoothies","subCategory":"Energy & Refreshers","uuid":"ef78e43d-4833-4bf4-90bf-f32288ca5668","source":"EWR1","qty":null,"available":true,"riskFlag":false,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Rockline","product":"Brew Rite 15\" x 5.5\" Coffee Filters","uom":"Case (500x)","category":"Caf\u00e9 Supplies","subCategory":"Coffee Supplies","uuid":"3dcdba58-b000-4c8b-a9a0-25cd38779da3","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Proper","product":"Proper Syrup Simple Syrup 750mL","uom":"Case (12x)","category":"Syrups & Smoothies","subCategory":"Syrups","uuid":"39751dba-3918-4c80-a8ef-2c1dd41dc4b4","source":"EWR1","qty":null,"available":false,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Proper","product":"Proper Syrup Vanilla 750mL","uom":"Case (12x)","category":"Syrups & Smoothies","subCategory":"Syrups","uuid":"a4e616b3-bf37-4ea8-998a-1011ef0a24ae","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Proper","product":"Proper Syrup Strawberry Syrup 750mL","uom":"Case (12x)","category":"Syrups & Smoothies","subCategory":"Syrups","uuid":"893824e1-f6ca-4592-81cf-4e3f29413301","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Proper","product":"Proper Syrup Caramel 750mL","uom":"Case (12x)","category":"Syrups & Smoothies","subCategory":"Syrups","uuid":"ebff3f70-faff-4fdc-9eb3-61a466d9c351","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Proper","product":"Proper Syrup Pistachio 750mL","uom":"Case (12x)","category":"Syrups & Smoothies","subCategory":"Syrups","uuid":"2993e7cd-e70c-41bd-a0d0-77d5bd0bce91","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Proper","product":"Proper Syrup Hazelnut 750mL","uom":"Case (12x)","category":"Syrups & Smoothies","subCategory":"Syrups","uuid":"b7c8b2c2-f0f6-421e-a061-f7e58b88a804","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false},{"warehouse":"BNA1","brand":"Proper","product":"Proper Syrup Lavender 750mL","uom":"Case (12x)","category":"Syrups & Smoothies","subCategory":"Syrups","uuid":"17d7de2c-1e2a-4727-ac2d-02a4bd0c894c","source":"EWR1","qty":null,"available":true,"riskFlag":true,"auditNoUtil":false,"auditRisk":false}],"auditNoUtilization":["1883 Syrup Pump (Glass)","Boxed Water 16.9oz","Something & Nothing Cucumber Seltzer, 11.2oz","Something & Nothing Hibiscus & Rose Seltzer, 11.2oz","Something & Nothing Pineapple & Pink Grapefruit Seltzer, 11.2oz","Something & Nothing Yuzu Seltzer, 11.2oz","Toddy Commercial Model Paper Filter pack"],"auditRiskFlag":["Mylk Labs Banana Nut Oatmeal Cup 1.85oz","Mylk Labs Nut Free Apple Cinnamon Oatmeal Cup 1.9oz","Mylk Labs Nut Free Maple Strawberry Oatmeal Cup 1.86oz","Urnex Freez Ice Machine Cleaner 14oz Bottle"]}</script>
+<script>
+(() => {
+  const DATA = JSON.parse(document.getElementById('bna1-data').textContent);
+  const items = DATA.items;
+  const LS_KEY = 'bna1-to-qty-v1';
+
+  // Restore quantities
+  const saved = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+  items.forEach(it => { it.qty = saved[it.uuid] ?? null; });
+
+  const $ = id => document.getElementById(id);
+  const search = $('search');
+  const fCat = $('filter-category');
+  const fSub = $('filter-subcat');
+  const fBrand = $('filter-brand');
+  const fStatus = $('filter-status');
+  const rowsEl = $('rows');
+  const filterCount = $('filter-count');
+
+  // Populate filters
+  const uniq = (arr) => [...new Set(arr.filter(Boolean))].sort();
+  function fill(sel, vals) {
+    vals.forEach(v => {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = v;
+      sel.appendChild(o);
+    });
+  }
+  fill(fCat, uniq(items.map(i => i.category)));
+  fill(fSub, uniq(items.map(i => i.subCategory)));
+  fill(fBrand, uniq(items.map(i => i.brand)));
+
+  let sortKey = 'product';
+  let sortDir = 1;
+
+  function statusOf(it) {
+    if (!it.available) return 'red';
+    if (it.riskFlag) return 'amber';
+    return 'green';
+  }
+  function statusLabel(it) {
+    if (!it.available) return 'Not available';
+    if (it.riskFlag) return 'Risk flag';
+    return 'Available';
+  }
+
+  function matches(it) {
+    const q = search.value.trim().toLowerCase();
+    if (q) {
+      const hay = (it.product + ' ' + it.brand + ' ' + it.uuid + ' ' + it.subCategory).toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    if (fCat.value && it.category !== fCat.value) return false;
+    if (fSub.value && it.subCategory !== fSub.value) return false;
+    if (fBrand.value && it.brand !== fBrand.value) return false;
+    const s = fStatus.value;
+    if (s === 'available' && !it.available) return false;
+    if (s === 'unavailable' && it.available) return false;
+    if (s === 'risk' && !it.riskFlag) return false;
+    if (s === 'hasqty' && !(it.qty > 0)) return false;
+    return true;
+  }
+
+  function sortRows(rows) {
+    const k = sortKey;
+    rows.sort((a, b) => {
+      let av, bv;
+      if (k === 'status') { av = statusLabel(a); bv = statusLabel(b); }
+      else if (k === 'qty') { av = a.qty || 0; bv = b.qty || 0; }
+      else { av = (a[k] || '').toString().toLowerCase(); bv = (b[k] || '').toString().toLowerCase(); }
+      if (av < bv) return -1 * sortDir;
+      if (av > bv) return 1 * sortDir;
+      return 0;
+    });
+    return rows;
+  }
+
+  function render() {
+    const filtered = sortRows(items.filter(matches));
+    filterCount.textContent = `${filtered.length} of ${items.length}`;
+
+    if (!filtered.length) {
+      rowsEl.innerHTML = `<tr><td colspan="7" class="empty">No items match these filters.</td></tr>`;
+      updateKpis();
+      return;
+    }
+
+    const frag = document.createDocumentFragment();
+    filtered.forEach(it => {
+      const tr = document.createElement('tr');
+      if (!it.available) tr.classList.add('unavailable');
+      if (it.qty > 0) tr.classList.add('has-qty');
+
+      const status = statusOf(it);
+
+      tr.innerHTML = `
+        <td class="product">
+          <span class="${it.available ? 'avail' : 'unavail'}">${escapeHtml(it.product)}</span>
+          <span class="product-sub">${escapeHtml(it.subCategory || '')}${it.uuid ? ' · ' + it.uuid.slice(0,8) : ''}</span>
+        </td>
+        <td>${escapeHtml(it.brand)}</td>
+        <td>${escapeHtml(it.category)}</td>
+        <td>${escapeHtml(it.uom || '')}</td>
+        <td>${escapeHtml(it.source)}</td>
+        <td><span class="chip ${status}">${statusLabel(it)}</span></td>
+        <td style="text-align:right;">
+          <input type="number" min="0" step="1" class="qty"
+                 value="${it.qty ?? ''}"
+                 data-uuid="${it.uuid}"
+                 ${!it.available ? 'title="Item not available for TO — entering a Qty will be excluded on export"' : ''}>
+        </td>
+      `;
+      frag.appendChild(tr);
+    });
+    rowsEl.innerHTML = '';
+    rowsEl.appendChild(frag);
+    updateKpis();
+    markSortedHeader();
+  }
+
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  }
+
+  function updateKpis() {
+    const total = items.length;
+    const available = items.filter(i => i.available).length;
+    const unavailable = total - available;
+    const risk = items.filter(i => i.riskFlag).length;
+    const withQty = items.filter(i => i.qty > 0).length;
+    const totalQty = items.filter(i => i.available).reduce((s,i) => s + (Number(i.qty)||0), 0);
+    const blockedQty = items.filter(i => !i.available && i.qty > 0).length;
+
+    const kpis = [
+      { label: 'Items on Template', value: total, cls: '' },
+      { label: 'Available for TO', value: available, cls: 'green' },
+      { label: 'Not Available', value: unavailable, cls: 'red', delta: unavailable ? '7-day lead time required' : '' },
+      { label: 'Risk Flagged', value: risk, cls: 'amber' },
+      { label: 'Items with Qty', value: withQty, cls: 'accent' },
+      { label: 'Total Cases on TO', value: totalQty, cls: 'accent' },
+      ...(blockedQty ? [{ label: 'Qty on Blocked Items', value: blockedQty, cls: 'red', delta: 'Will be excluded on export' }] : []),
+    ];
+
+    $('kpis').innerHTML = kpis.map(k =>
+      `<div class="kpi ${k.cls}">
+        <div class="label">${k.label}</div>
+        <div class="value">${k.value}</div>
+        ${k.delta ? `<div class="delta">${k.delta}</div>` : ''}
+      </div>`
+    ).join('');
+  }
+
+  function markSortedHeader() {
+    document.querySelectorAll('thead th').forEach(th => {
+      th.classList.toggle('sorted', th.dataset.sort === sortKey);
+      const arrow = th.querySelector('.arrow');
+      if (th.dataset.sort === sortKey) arrow.textContent = sortDir === 1 ? '▾' : '▴';
+      else arrow.textContent = '▾';
+    });
+  }
+
+  // Charts
+  function renderBarChart(target, data, max) {
+    const m = max || Math.max(...data.map(d => d.count));
+    target.innerHTML = data.map(d => `
+      <div class="bar-row">
+        <div class="name" title="${escapeHtml(d.name)}">${escapeHtml(d.name)}</div>
+        <div class="bar"><div style="width:${(d.count/m*100).toFixed(1)}%"></div></div>
+        <div class="count">${d.count}</div>
+      </div>
+    `).join('');
+  }
+
+  function groupBy(key) {
+    const m = new Map();
+    items.forEach(it => {
+      const k = it[key] || '(none)';
+      m.set(k, (m.get(k)||0)+1);
+    });
+    return [...m.entries()].map(([name,count]) => ({name,count})).sort((a,b)=>b.count-a.count);
+  }
+
+  renderBarChart($('cat-chart'), groupBy('category'));
+  renderBarChart($('brand-chart'), groupBy('brand').slice(0, 12));
+
+  $('audit-noutil').innerHTML = DATA.auditNoUtilization.map(p => `<li>${escapeHtml(p)}</li>`).join('') || '<li class="empty">None</li>';
+  $('audit-risk').innerHTML = DATA.auditRiskFlag.map(p => `<li class="risk">${escapeHtml(p)}</li>`).join('') || '<li class="empty">None</li>';
+
+  // Events
+  search.addEventListener('input', render);
+  [fCat, fSub, fBrand, fStatus].forEach(el => el.addEventListener('change', render));
+  document.querySelectorAll('thead th').forEach(th => {
+    th.addEventListener('click', () => {
+      const k = th.dataset.sort;
+      if (sortKey === k) sortDir = -sortDir; else { sortKey = k; sortDir = 1; }
+      render();
+    });
+  });
+
+  rowsEl.addEventListener('input', e => {
+    if (!e.target.classList.contains('qty')) return;
+    const uuid = e.target.dataset.uuid;
+    const v = e.target.value.trim();
+    const it = items.find(i => i.uuid === uuid);
+    if (!it) return;
+    it.qty = v === '' ? null : Number(v);
+    const store = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+    if (it.qty == null || isNaN(it.qty)) delete store[uuid]; else store[uuid] = it.qty;
+    localStorage.setItem(LS_KEY, JSON.stringify(store));
+    e.target.closest('tr').classList.toggle('has-qty', it.qty > 0);
+    updateKpis();
+  });
+
+  $('btn-clear').addEventListener('click', () => {
+    if (!confirm('Clear all entered quantities?')) return;
+    items.forEach(i => i.qty = null);
+    localStorage.removeItem(LS_KEY);
+    render();
+    toast('Cleared all quantities', 'warn');
+  });
+
+  function downloadCsv(filename, rows) {
+    const csv = rows.map(r => r.map(cell => {
+      const s = String(cell ?? '');
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+    }).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  $('btn-export-csv').addEventListener('click', () => {
+    const header = ['WAREHOUSE','BRAND','Product','TO UOM','CATEGORY','SUB-CATEGORY','ODEKO ITEM UUID','SOURCE','TO Requested Quantity (Purchase Units)','Available','Risk Flag'];
+    const rows = [header, ...items.map(i => [
+      i.warehouse, i.brand, i.product, i.uom, i.category, i.subCategory, i.uuid, i.source,
+      i.qty ?? '', i.available ? 'YES' : 'NO', i.riskFlag ? 'YES' : 'NO',
+    ])];
+    downloadCsv(`BNA1_TO_full_${ymd()}.csv`, rows);
+    toast('Exported full CSV');
+  });
+
+  $('btn-export-to').addEventListener('click', () => {
+    const ready = items.filter(i => i.available && i.qty > 0);
+    const blocked = items.filter(i => !i.available && i.qty > 0);
+    if (!ready.length) {
+      toast('No quantities entered for available items', 'error');
+      return;
+    }
+    const header = ['WAREHOUSE','BRAND','Product','TO UOM','ODEKO ITEM UUID','SOURCE','TO Requested Quantity','Status'];
+    const rows = [header, ...ready.map(i => [
+      i.warehouse, i.brand, i.product, i.uom, i.uuid, i.source, i.qty, 'PENDING APPROVAL'
+    ])];
+    downloadCsv(`BNA1_TO_pending_${ymd()}.csv`, rows);
+    let msg = `Exported ${ready.length} item${ready.length===1?'':'s'} to PENDING APPROVAL TO`;
+    if (blocked.length) msg += ` · ${blocked.length} blocked item${blocked.length===1?'':'s'} excluded`;
+    toast(msg, blocked.length ? 'warn' : null);
+  });
+
+  function ymd() {
+    const d = new Date();
+    return d.toISOString().slice(0,10);
+  }
+
+  let toastTimer;
+  function toast(msg, kind) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.className = 'toast show' + (kind ? ' '+kind : '');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
