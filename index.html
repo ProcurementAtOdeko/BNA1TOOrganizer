@@ -330,7 +330,11 @@
 (() => {
   const DATA = JSON.parse(document.getElementById('bna1-data').textContent);
   const items = DATA.items.map(i => ({
-    ...i, adhoc: false,
+    ...i,
+    // Ignore any qty baked into the source template; user enters everything fresh.
+    // Values from localStorage are reapplied below.
+    qty: null,
+    adhoc: false,
     eta: null, ohUnits: null, consumption: null, toAvailable: null, leadDays: null,
     bnaInventory: null, bnaConsumption: null, bnaDaysOfCover: null,
   }));
@@ -462,7 +466,9 @@
   fill(fSub, uniq(items.map(i => i.subCategory)));
   fill(fBrand, uniq(items.map(i => i.brand)));
 
-  let sortKey = 'product';
+  // Default: surface items BNA1 most needs (lowest net days of cover) at the top.
+  // Items without BNA1 data sink to the bottom.
+  let sortKey = 'bnaNeed';
   let sortDir = 1;
 
   function statusFlags(it) {
@@ -534,12 +540,19 @@
     const k = sortKey;
     rows.sort((a, b) => {
       let av, bv;
-      if (k === 'status') { av = statusSortKey(a); bv = statusSortKey(b); }
+      if (k === 'bnaNeed') {
+        av = a.bnaDaysOfCover != null ? a.bnaDaysOfCover : Infinity;
+        bv = b.bnaDaysOfCover != null ? b.bnaDaysOfCover : Infinity;
+      }
+      else if (k === 'status') { av = statusSortKey(a); bv = statusSortKey(b); }
       else if (k === 'qty') { av = a.qty || 0; bv = b.qty || 0; }
       else { av = (a[k] || '').toString().toLowerCase(); bv = (b[k] || '').toString().toLowerCase(); }
       if (av < bv) return -1 * sortDir;
       if (av > bv) return 1 * sortDir;
-      return 0;
+      // Tiebreaker: keep product order so the table is deterministic.
+      const pa = (a.product || '').toLowerCase();
+      const pb = (b.product || '').toLowerCase();
+      return pa < pb ? -1 : pa > pb ? 1 : 0;
     });
     return rows;
   }
