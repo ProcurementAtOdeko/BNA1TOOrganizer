@@ -89,8 +89,14 @@ def load_source(path: Path) -> dict:
                 rec["eta"] = dates
             for key in ("ohUnits", "consumption", "toAvailable", "leadDays"):
                 v = parse_num(row.get(SRC_COLS[key]))
-                if v is not None:
-                    rec[key] = v
+                if v is None:
+                    continue
+                # EWR1's available TO quantity can be negative when the warehouse
+                # is already overdrawn. Floor at 0 so downstream math and display
+                # treat "negative" as "none available".
+                if key == "toAvailable" and v < 0:
+                    v = 0
+                rec[key] = v
     return items
 
 
