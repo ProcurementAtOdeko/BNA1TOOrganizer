@@ -72,6 +72,37 @@
   .chip.green { background: var(--green-soft); color: #6fd37f; border-color: transparent; }
   .chip.red { background: var(--red-soft); color: #ff8389; border-color: transparent; }
   .chip.amber { background: var(--amber-soft); color: #f0c860; border-color: transparent; }
+  .chip.gray { background: rgba(139,150,165,.15); color: #b8c2d0; border-color: transparent; }
+  .chip.violet { background: rgba(139,108,255,.18); color: #c9b8ff; border-color: transparent; }
+  .chips-cell { display:flex; flex-wrap:wrap; gap:4px; max-width: 240px; }
+  .chip[data-tip] { cursor: help; }
+  .chip.dot-prefix::before {
+    content:''; width:6px; height:6px; border-radius:50%; background: currentColor; display:inline-block;
+  }
+
+  .adhoc-form {
+    display:none; padding: 14px 16px; border-bottom:1px solid var(--line); background: var(--panel-2);
+    grid-template-columns: repeat(6, minmax(0,1fr)); gap: 10px; align-items: end;
+  }
+  .adhoc-form.open { display:grid; }
+  .adhoc-form label { display:flex; flex-direction:column; gap:4px; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
+  .adhoc-form input, .adhoc-form select {
+    background:var(--panel); color:var(--ink); border:1px solid var(--line);
+    padding:7px 10px; border-radius:6px; font-size:13px; outline:none;
+  }
+  .adhoc-form input:focus, .adhoc-form select:focus { border-color: var(--accent); }
+  .adhoc-form .actions { display:flex; gap:8px; }
+  .adhoc-form .req::after { content:' *'; color: var(--red); }
+  @media (max-width: 1100px){ .adhoc-form.open { grid-template-columns: repeat(3, 1fr); } }
+
+  .row-actions { display:flex; gap:6px; justify-content:flex-end; align-items:center; }
+  .icon-btn {
+    background: transparent; border:1px solid var(--line); border-radius:5px; color:var(--muted);
+    padding:4px 7px; font-size:12px; line-height:1; cursor:pointer;
+  }
+  .icon-btn:hover { color: var(--red); border-color: var(--red); }
+  tbody tr.adhoc { background: rgba(139,108,255,.05); }
+  tbody tr.adhoc.has-qty { background: rgba(139,108,255,.10); }
 
   table { width:100%; border-collapse: collapse; font-size:13px; }
   thead th {
@@ -151,8 +182,8 @@
         <span>Transfer Order Builder</span>
         <span class="legend">
           <span><span class="dot green"></span>Available</span>
-          <span><span class="dot red"></span>Not available for TO</span>
-          <span><span class="dot amber"></span>Risk flag</span>
+          <span><span class="dot red"></span>Not available</span>
+          <span><span class="dot amber"></span>EWR1 stock risk</span>
         </span>
       </h3>
       <div class="toolbar">
@@ -164,12 +195,52 @@
           <option value="">All Items</option>
           <option value="available">Available only</option>
           <option value="unavailable">Not available only</option>
-          <option value="risk">Risk flagged</option>
+          <option value="risk">EWR1 stock risk</option>
+          <option value="noutil">Audit · No utilization</option>
+          <option value="auditrisk">Audit · Risk flag</option>
+          <option value="adhoc">Ad-hoc items</option>
           <option value="hasqty">With Qty entered</option>
         </select>
         <span class="grow"></span>
         <span class="chip" id="filter-count">0 of 0</span>
+        <button id="btn-add-toggle" class="primary" style="padding:6px 12px;">+ Add Item</button>
       </div>
+      <form class="adhoc-form" id="adhoc-form" autocomplete="off">
+        <label class="req">Product
+          <input type="text" name="product" required maxlength="200" />
+        </label>
+        <label class="req">Brand
+          <input type="text" name="brand" required maxlength="100" />
+        </label>
+        <label class="req">UOM
+          <input type="text" name="uom" required maxlength="60" placeholder="e.g. Case (12x)" />
+        </label>
+        <label>Category
+          <input type="text" name="category" maxlength="80" list="cat-list" />
+          <datalist id="cat-list"></datalist>
+        </label>
+        <label>Sub-Category
+          <input type="text" name="subCategory" maxlength="80" list="subcat-list" />
+          <datalist id="subcat-list"></datalist>
+        </label>
+        <label>Source
+          <select name="source">
+            <option value="EWR1">EWR1</option>
+            <option value="SUB-DISTRO">SUB-DISTRO</option>
+            <option value="OTHER">OTHER</option>
+          </select>
+        </label>
+        <label style="grid-column: span 2;">UUID (optional — auto-generated if blank)
+          <input type="text" name="uuid" maxlength="64" placeholder="auto" />
+        </label>
+        <label>Initial Qty
+          <input type="number" name="qty" min="0" step="1" />
+        </label>
+        <div class="actions" style="grid-column: span 3;">
+          <button type="submit" class="primary">Add to TO</button>
+          <button type="button" id="btn-add-cancel" class="ghost">Cancel</button>
+        </div>
+      </form>
       <div class="table-scroll">
         <table id="items">
           <thead>
@@ -181,6 +252,7 @@
               <th data-sort="source">Source <span class="arrow">▾</span></th>
               <th data-sort="status">Status <span class="arrow">▾</span></th>
               <th data-sort="qty" style="text-align:right;">Qty <span class="arrow">▾</span></th>
+              <th></th>
             </tr>
           </thead>
           <tbody id="rows"></tbody>
@@ -217,12 +289,15 @@
 <script>
 (() => {
   const DATA = JSON.parse(document.getElementById('bna1-data').textContent);
-  const items = DATA.items;
+  const items = DATA.items.map(i => ({ ...i, adhoc: false }));
   const LS_KEY = 'bna1-to-qty-v1';
+  const LS_KEY_ADHOC = 'bna1-to-adhoc-v1';
 
-  // Restore quantities
+  const adhocStored = JSON.parse(localStorage.getItem(LS_KEY_ADHOC) || '[]');
+  adhocStored.forEach(a => items.push({ ...a, adhoc: true, available: true, riskFlag: false, auditNoUtil: false, auditRisk: false, warehouse: 'BNA1' }));
+
   const saved = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
-  items.forEach(it => { it.qty = saved[it.uuid] ?? null; });
+  items.forEach(it => { if (saved[it.uuid] != null) it.qty = saved[it.uuid]; });
 
   const $ = id => document.getElementById(id);
   const search = $('search');
@@ -249,15 +324,23 @@
   let sortKey = 'product';
   let sortDir = 1;
 
-  function statusOf(it) {
-    if (!it.available) return 'red';
-    if (it.riskFlag) return 'amber';
-    return 'green';
+  function statusFlags(it) {
+    const flags = [];
+    if (it.adhoc) flags.push({ cls: 'violet', label: 'Ad-hoc', tip: 'Added manually outside of the template' });
+    if (!it.available) flags.push({ cls: 'red', label: 'Not available', tip: '7-day lead time required — UUID not in allowed-for-TO list (Sheet3)' });
+    else if (!it.adhoc) flags.push({ cls: 'green', label: 'Available', tip: 'Cleared for transfer order' });
+    if (it.riskFlag) flags.push({ cls: 'amber', label: 'EWR1 stock risk', tip: 'EWR1 inventory may be lower than your requested qty' });
+    if (it.auditNoUtil) flags.push({ cls: 'gray', label: 'No utilization', tip: 'On TO with no tool utilization (per 219 TO Audit) — consider removing' });
+    if (it.auditRisk) flags.push({ cls: 'red', label: 'Audit flag', tip: 'Flagged in 219 TO Audit risk list' });
+    return flags;
   }
-  function statusLabel(it) {
-    if (!it.available) return 'Not available';
-    if (it.riskFlag) return 'Risk flag';
-    return 'Available';
+  function statusSortKey(it) {
+    if (!it.available) return '0_unavail';
+    if (it.auditRisk) return '1_auditrisk';
+    if (it.riskFlag) return '2_risk';
+    if (it.auditNoUtil) return '3_noutil';
+    if (it.adhoc) return '4_adhoc';
+    return '5_avail';
   }
 
   function matches(it) {
@@ -273,6 +356,9 @@
     if (s === 'available' && !it.available) return false;
     if (s === 'unavailable' && it.available) return false;
     if (s === 'risk' && !it.riskFlag) return false;
+    if (s === 'noutil' && !it.auditNoUtil) return false;
+    if (s === 'auditrisk' && !it.auditRisk) return false;
+    if (s === 'adhoc' && !it.adhoc) return false;
     if (s === 'hasqty' && !(it.qty > 0)) return false;
     return true;
   }
@@ -281,7 +367,7 @@
     const k = sortKey;
     rows.sort((a, b) => {
       let av, bv;
-      if (k === 'status') { av = statusLabel(a); bv = statusLabel(b); }
+      if (k === 'status') { av = statusSortKey(a); bv = statusSortKey(b); }
       else if (k === 'qty') { av = a.qty || 0; bv = b.qty || 0; }
       else { av = (a[k] || '').toString().toLowerCase(); bv = (b[k] || '').toString().toLowerCase(); }
       if (av < bv) return -1 * sortDir;
@@ -296,7 +382,7 @@
     filterCount.textContent = `${filtered.length} of ${items.length}`;
 
     if (!filtered.length) {
-      rowsEl.innerHTML = `<tr><td colspan="7" class="empty">No items match these filters.</td></tr>`;
+      rowsEl.innerHTML = `<tr><td colspan="8" class="empty">No items match these filters.</td></tr>`;
       updateKpis();
       return;
     }
@@ -306,24 +392,30 @@
       const tr = document.createElement('tr');
       if (!it.available) tr.classList.add('unavailable');
       if (it.qty > 0) tr.classList.add('has-qty');
+      if (it.adhoc) tr.classList.add('adhoc');
 
-      const status = statusOf(it);
+      const chips = statusFlags(it).map(f =>
+        `<span class="chip ${f.cls}" data-tip="${escapeHtml(f.tip)}" title="${escapeHtml(f.tip)}">${escapeHtml(f.label)}</span>`
+      ).join('');
 
       tr.innerHTML = `
         <td class="product">
           <span class="${it.available ? 'avail' : 'unavail'}">${escapeHtml(it.product)}</span>
-          <span class="product-sub">${escapeHtml(it.subCategory || '')}${it.uuid ? ' · ' + it.uuid.slice(0,8) : ''}</span>
+          <span class="product-sub">${escapeHtml(it.subCategory || '')}${it.uuid ? ' · ' + String(it.uuid).slice(0,8) : ''}</span>
         </td>
         <td>${escapeHtml(it.brand)}</td>
         <td>${escapeHtml(it.category)}</td>
         <td>${escapeHtml(it.uom || '')}</td>
         <td>${escapeHtml(it.source)}</td>
-        <td><span class="chip ${status}">${statusLabel(it)}</span></td>
+        <td><div class="chips-cell">${chips}</div></td>
         <td style="text-align:right;">
           <input type="number" min="0" step="1" class="qty"
                  value="${it.qty ?? ''}"
-                 data-uuid="${it.uuid}"
-                 ${!it.available ? 'title="Item not available for TO — entering a Qty will be excluded on export"' : ''}>
+                 data-uuid="${escapeHtml(it.uuid)}"
+                 ${!it.available ? 'title="Item not available for TO — Qty will be excluded on export"' : ''}>
+        </td>
+        <td class="row-actions">
+          ${it.adhoc ? `<button class="icon-btn btn-delete-adhoc" data-uuid="${escapeHtml(it.uuid)}" title="Delete ad-hoc item">×</button>` : ''}
         </td>
       `;
       frag.appendChild(tr);
@@ -340,6 +432,7 @@
 
   function updateKpis() {
     const total = items.length;
+    const adhoc = items.filter(i => i.adhoc).length;
     const available = items.filter(i => i.available).length;
     const unavailable = total - available;
     const risk = items.filter(i => i.riskFlag).length;
@@ -348,10 +441,11 @@
     const blockedQty = items.filter(i => !i.available && i.qty > 0).length;
 
     const kpis = [
-      { label: 'Items on Template', value: total, cls: '' },
+      { label: 'Items on Template', value: total - adhoc, cls: '' },
       { label: 'Available for TO', value: available, cls: 'green' },
       { label: 'Not Available', value: unavailable, cls: 'red', delta: unavailable ? '7-day lead time required' : '' },
-      { label: 'Risk Flagged', value: risk, cls: 'amber' },
+      { label: 'EWR1 Stock Risk', value: risk, cls: 'amber' },
+      ...(adhoc ? [{ label: 'Ad-hoc Items', value: adhoc, cls: 'accent' }] : []),
       { label: 'Items with Qty', value: withQty, cls: 'accent' },
       { label: 'Total Cases on TO', value: totalQty, cls: 'accent' },
       ...(blockedQty ? [{ label: 'Qty on Blocked Items', value: blockedQty, cls: 'red', delta: 'Will be excluded on export' }] : []),
@@ -367,9 +461,10 @@
   }
 
   function markSortedHeader() {
-    document.querySelectorAll('thead th').forEach(th => {
+    document.querySelectorAll('thead th[data-sort]').forEach(th => {
       th.classList.toggle('sorted', th.dataset.sort === sortKey);
       const arrow = th.querySelector('.arrow');
+      if (!arrow) return;
       if (th.dataset.sort === sortKey) arrow.textContent = sortDir === 1 ? '▾' : '▴';
       else arrow.textContent = '▾';
     });
@@ -405,7 +500,7 @@
   // Events
   search.addEventListener('input', render);
   [fCat, fSub, fBrand, fStatus].forEach(el => el.addEventListener('change', render));
-  document.querySelectorAll('thead th').forEach(th => {
+  document.querySelectorAll('thead th[data-sort]').forEach(th => {
     th.addEventListener('click', () => {
       const k = th.dataset.sort;
       if (sortKey === k) sortDir = -sortDir; else { sortKey = k; sortDir = 1; }
@@ -423,16 +518,118 @@
     const store = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
     if (it.qty == null || isNaN(it.qty)) delete store[uuid]; else store[uuid] = it.qty;
     localStorage.setItem(LS_KEY, JSON.stringify(store));
+    if (it.adhoc) persistAdhoc();
     e.target.closest('tr').classList.toggle('has-qty', it.qty > 0);
     updateKpis();
   });
 
   $('btn-clear').addEventListener('click', () => {
-    if (!confirm('Clear all entered quantities?')) return;
+    if (!confirm('Clear all entered quantities? (Ad-hoc items will remain.)')) return;
     items.forEach(i => i.qty = null);
     localStorage.removeItem(LS_KEY);
     render();
     toast('Cleared all quantities', 'warn');
+  });
+
+  // ---- Ad-hoc items ----
+  function persistAdhoc() {
+    const list = items.filter(i => i.adhoc).map(i => ({
+      uuid: i.uuid, product: i.product, brand: i.brand, uom: i.uom,
+      category: i.category, subCategory: i.subCategory, source: i.source,
+      qty: i.qty,
+    }));
+    localStorage.setItem(LS_KEY_ADHOC, JSON.stringify(list));
+  }
+
+  function genUuid() {
+    if (window.crypto && crypto.randomUUID) return 'adhoc-' + crypto.randomUUID();
+    return 'adhoc-' + Date.now() + '-' + Math.random().toString(36).slice(2,10);
+  }
+
+  // Populate datalists for category/subcat in ad-hoc form
+  $('cat-list').innerHTML = uniq(items.map(i => i.category)).map(v => `<option value="${escapeHtml(v)}">`).join('');
+  $('subcat-list').innerHTML = uniq(items.map(i => i.subCategory)).map(v => `<option value="${escapeHtml(v)}">`).join('');
+
+  const adhocForm = $('adhoc-form');
+  $('btn-add-toggle').addEventListener('click', () => {
+    adhocForm.classList.toggle('open');
+    if (adhocForm.classList.contains('open')) adhocForm.querySelector('[name=product]').focus();
+  });
+  $('btn-add-cancel').addEventListener('click', () => {
+    adhocForm.classList.remove('open');
+    adhocForm.reset();
+  });
+
+  adhocForm.addEventListener('submit', e => {
+    e.preventDefault();
+    const f = new FormData(adhocForm);
+    const product = (f.get('product') || '').toString().trim();
+    const brand = (f.get('brand') || '').toString().trim();
+    const uom = (f.get('uom') || '').toString().trim();
+    if (!product || !brand || !uom) { toast('Product, Brand, UOM required', 'error'); return; }
+    let uuid = (f.get('uuid') || '').toString().trim() || genUuid();
+    if (items.some(i => i.uuid === uuid)) { toast('UUID already exists', 'error'); return; }
+    const qtyRaw = (f.get('qty') || '').toString().trim();
+    const qty = qtyRaw === '' ? null : Number(qtyRaw);
+
+    const newItem = {
+      warehouse: 'BNA1',
+      brand, product, uom,
+      category: (f.get('category') || '').toString().trim(),
+      subCategory: (f.get('subCategory') || '').toString().trim(),
+      uuid,
+      source: (f.get('source') || 'EWR1').toString(),
+      qty,
+      available: true, riskFlag: false, auditNoUtil: false, auditRisk: false,
+      adhoc: true,
+    };
+    items.push(newItem);
+    persistAdhoc();
+    if (qty != null && !isNaN(qty)) {
+      const store = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+      store[uuid] = qty;
+      localStorage.setItem(LS_KEY, JSON.stringify(store));
+    }
+    // Update filter dropdowns with any new brand/category values
+    refreshFilterOptions();
+    renderBarChart($('cat-chart'), groupBy('category'));
+    renderBarChart($('brand-chart'), groupBy('brand').slice(0, 12));
+    adhocForm.reset();
+    adhocForm.classList.remove('open');
+    render();
+    toast(`Added "${product}"`);
+  });
+
+  function refreshFilterOptions() {
+    [
+      [fCat, items.map(i => i.category), 'All Categories'],
+      [fSub, items.map(i => i.subCategory), 'All Sub-Categories'],
+      [fBrand, items.map(i => i.brand), 'All Brands'],
+    ].forEach(([sel, vals, all]) => {
+      const current = sel.value;
+      sel.innerHTML = `<option value="">${all}</option>` +
+        uniq(vals).map(v => `<option value="${escapeHtml(v)}"${v===current?' selected':''}>${escapeHtml(v)}</option>`).join('');
+    });
+  }
+
+  rowsEl.addEventListener('click', e => {
+    const btn = e.target.closest('.btn-delete-adhoc');
+    if (!btn) return;
+    const uuid = btn.dataset.uuid;
+    const it = items.find(i => i.uuid === uuid);
+    if (!it || !it.adhoc) return;
+    if (!confirm(`Delete ad-hoc item "${it.product}"?`)) return;
+    const idx = items.indexOf(it);
+    items.splice(idx, 1);
+    persistAdhoc();
+    const store = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+    delete store[uuid];
+    localStorage.setItem(LS_KEY, JSON.stringify(store));
+    refreshFilterOptions();
+    renderBarChart($('cat-chart'), groupBy('category'));
+    renderBarChart($('brand-chart'), groupBy('brand').slice(0, 12));
+    render();
+    toast(`Removed "${it.product}"`, 'warn');
   });
 
   function downloadCsv(filename, rows) {
@@ -448,10 +645,15 @@
   }
 
   $('btn-export-csv').addEventListener('click', () => {
-    const header = ['WAREHOUSE','BRAND','Product','TO UOM','CATEGORY','SUB-CATEGORY','ODEKO ITEM UUID','SOURCE','TO Requested Quantity (Purchase Units)','Available','Risk Flag'];
+    const header = ['WAREHOUSE','BRAND','Product','TO UOM','CATEGORY','SUB-CATEGORY','ODEKO ITEM UUID','SOURCE','TO Requested Quantity (Purchase Units)','Available','EWR1 Stock Risk','Audit: No Utilization','Audit: Risk Flag','Ad-hoc'];
     const rows = [header, ...items.map(i => [
       i.warehouse, i.brand, i.product, i.uom, i.category, i.subCategory, i.uuid, i.source,
-      i.qty ?? '', i.available ? 'YES' : 'NO', i.riskFlag ? 'YES' : 'NO',
+      i.qty ?? '',
+      i.available ? 'YES' : 'NO',
+      i.riskFlag ? 'YES' : 'NO',
+      i.auditNoUtil ? 'YES' : 'NO',
+      i.auditRisk ? 'YES' : 'NO',
+      i.adhoc ? 'YES' : 'NO',
     ])];
     downloadCsv(`BNA1_TO_full_${ymd()}.csv`, rows);
     toast('Exported full CSV');
@@ -464,12 +666,15 @@
       toast('No quantities entered for available items', 'error');
       return;
     }
-    const header = ['WAREHOUSE','BRAND','Product','TO UOM','ODEKO ITEM UUID','SOURCE','TO Requested Quantity','Status'];
+    const header = ['WAREHOUSE','BRAND','Product','TO UOM','ODEKO ITEM UUID','SOURCE','TO Requested Quantity','Status','Ad-hoc','EWR1 Stock Risk'];
     const rows = [header, ...ready.map(i => [
-      i.warehouse, i.brand, i.product, i.uom, i.uuid, i.source, i.qty, 'PENDING APPROVAL'
+      i.warehouse, i.brand, i.product, i.uom, i.uuid, i.source, i.qty, 'PENDING APPROVAL',
+      i.adhoc ? 'YES' : 'NO', i.riskFlag ? 'YES' : 'NO',
     ])];
     downloadCsv(`BNA1_TO_pending_${ymd()}.csv`, rows);
+    const adhocCount = ready.filter(i => i.adhoc).length;
     let msg = `Exported ${ready.length} item${ready.length===1?'':'s'} to PENDING APPROVAL TO`;
+    if (adhocCount) msg += ` · ${adhocCount} ad-hoc`;
     if (blocked.length) msg += ` · ${blocked.length} blocked item${blocked.length===1?'':'s'} excluded`;
     toast(msg, blocked.length ? 'warn' : null);
   });
