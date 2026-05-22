@@ -154,6 +154,13 @@
   tbody td input.qty:focus { border-color: var(--ink-2); box-shadow: 0 0 0 3px rgba(64,24,11,.08); }
   tbody tr.unavailable input.qty { background: var(--red-soft); border-color: transparent; color: var(--red); }
   tbody tr.unavailable input.qty:focus { border-color: var(--red); }
+  .qty-meta { font-size: 10.5px; color: var(--muted); margin-top: 3px; line-height: 1.3; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .qty-meta .outage { font-weight: 600; }
+  .qty-meta .outage.green { color: var(--green); }
+  .qty-meta .outage.amber { color: var(--amber); }
+  .qty-meta .outage.red { color: var(--red); }
+  .qty-meta .outage.gray { color: var(--muted); }
+  .qty-meta .over-cap { color: var(--red); font-weight: 600; }
 
   .table-scroll { max-height: 640px; overflow:auto; }
   .empty { padding:30px; text-align:center; color:var(--muted); }
@@ -321,10 +328,64 @@
 <script>
 (() => {
   const DATA = JSON.parse(document.getElementById('bna1-data').textContent);
-  const items = DATA.items.map(i => ({ ...i, adhoc: false, eta: null }));
+  const items = DATA.items.map(i => ({
+    ...i, adhoc: false,
+    eta: null, ohUnits: null, consumption: null, toAvailable: null, leadDays: null,
+  }));
   const LS_KEY = 'bna1-to-qty-v1';
   const LS_KEY_ADHOC = 'bna1-to-adhoc-v1';
-  let etaMeta = null;
+  let procMeta = null;
+
+  // Outage = Lead − (OnHand − requestedQty) / DailyConsumption
+  // Positive = days source warehouse will be out of stock while waiting for restock.
+  function computeOutage(it, qty) {
+    if (it.leadDays == null || it.ohUnits == null || !it.consumption || it.consumption <= 0) return null;
+    return it.leadDays - (it.ohUnits - qty) / it.consumption;
+  }
+  function fmtNum(n) {
+    if (n == null) return '—';
+    if (Number.isInteger(n)) return n.toString();
+    const abs = Math.abs(n);
+    const d = abs >= 100 ? 0 : abs >= 10 ? 1 : 2;
+    return Number(n.toFixed(d)).toString();
+  }
+  function outageClass(d) {
+    if (d == null) return 'gray';
+    if (d <= 0) return 'green';
+    if (d <= 7) return 'amber';
+    return 'red';
+  }
+  function qtyMetaHTML(it) {
+    const hasProc = it.toAvailable != null || it.leadDays != null;
+    if (!hasProc) return '';
+    const qty = Number(it.qty) || 0;
+    const parts = [];
+    if (it.toAvailable != null) {
+      const over = qty > 0 && qty > it.toAvailable;
+      parts.push(`<span class="${over ? 'over-cap' : ''}" title="Available TO quantity (purchase units) at source">Avail ${fmtNum(it.toAvailable)}</span>`);
+    }
+    if (it.leadDays != null) {
+      parts.push(`<span title="Vendor lead time">Lead ${fmtNum(it.leadDays)}d</span>`);
+    }
+    if (qty > 0) {
+      const o = computeOutage(it, qty);
+      if (o == null) {
+        parts.push('<span class="outage gray" title="Cannot compute outage — missing consumption data">Outage —</span>');
+      } else if (o <= 0) {
+        parts.push(`<span class="outage green" title="No source outage: ${fmtNum(-o)}d of cover after lead time">Safe ${fmtNum(-o)}d</span>`);
+      } else {
+        parts.push(`<span class="outage ${outageClass(o)}" title="Source warehouse out of stock for ${fmtNum(o)}d before restock. Formula: Lead − (OH − Qty) / Daily Consumption">Outage ${fmtNum(o)}d</span>`);
+      }
+    }
+    return parts.join(' · ');
+  }
+  function updateMetaCell(uuid) {
+    const it = items.find(x => x.uuid === uuid);
+    if (!it) return;
+    // UUIDs only contain [a-f0-9-], safe to inline in selector without escaping.
+    const cell = document.querySelector(`[data-meta-uuid="${uuid}"]`);
+    if (cell) cell.innerHTML = qtyMetaHTML(it);
+  }
 
   const adhocStored = JSON.parse(localStorage.getItem(LS_KEY_ADHOC) || '[]');
   adhocStored.forEach(a => items.push({ ...a, adhoc: true, available: true, riskFlag: false, auditNoUtil: false, auditRisk: false, warehouse: 'BNA1' }));
@@ -455,6 +516,7 @@
                  value="${it.qty ?? ''}"
                  data-uuid="${escapeHtml(it.uuid)}"
                  ${!it.available ? 'title="Item not available for TO — Qty will be excluded on export"' : ''}>
+          <div class="qty-meta" data-meta-uuid="${escapeHtml(it.uuid)}">${qtyMetaHTML(it)}</div>
         </td>
         <td class="row-actions">
           ${it.adhoc ? `<button class="icon-btn btn-delete-adhoc" data-uuid="${escapeHtml(it.uuid)}" title="Delete ad-hoc item">×</button>` : ''}
@@ -574,6 +636,7 @@
     localStorage.setItem(LS_KEY, JSON.stringify(store));
     if (it.adhoc) persistAdhoc();
     e.target.closest('tr').classList.toggle('has-qty', it.qty > 0);
+    updateMetaCell(uuid);
     updateKpis();
   });
 
@@ -699,17 +762,25 @@
   }
 
   $('btn-export-csv').addEventListener('click', () => {
-    const header = ['WAREHOUSE','BRAND','Product','TO UOM','CATEGORY','SUB-CATEGORY','ODEKO ITEM UUID','SOURCE','TO Requested Quantity (Purchase Units)','Available','Current ETA','EWR1 Stock Risk','Audit: No Utilization','Audit: Risk Flag','Ad-hoc'];
-    const rows = [header, ...items.map(i => [
-      i.warehouse, i.brand, i.product, i.uom, i.category, i.subCategory, i.uuid, i.source,
-      i.qty ?? '',
-      i.available ? 'YES' : 'NO',
-      (i.eta || []).join(', '),
-      i.riskFlag ? 'YES' : 'NO',
-      i.auditNoUtil ? 'YES' : 'NO',
-      i.auditRisk ? 'YES' : 'NO',
-      i.adhoc ? 'YES' : 'NO',
-    ])];
+    const header = ['WAREHOUSE','BRAND','Product','TO UOM','CATEGORY','SUB-CATEGORY','ODEKO ITEM UUID','SOURCE','TO Requested Quantity (Purchase Units)','Available','Current ETA','TO Available (L)','Lead Days (M)','OH Purchase Units (J)','Daily Consumption (K)','Outage Days','EWR1 Stock Risk','Audit: No Utilization','Audit: Risk Flag','Ad-hoc'];
+    const rows = [header, ...items.map(i => {
+      const o = i.qty > 0 ? computeOutage(i, i.qty) : null;
+      return [
+        i.warehouse, i.brand, i.product, i.uom, i.category, i.subCategory, i.uuid, i.source,
+        i.qty ?? '',
+        i.available ? 'YES' : 'NO',
+        (i.eta || []).join(', '),
+        i.toAvailable ?? '',
+        i.leadDays ?? '',
+        i.ohUnits ?? '',
+        i.consumption ?? '',
+        o == null ? '' : Number(o.toFixed(2)),
+        i.riskFlag ? 'YES' : 'NO',
+        i.auditNoUtil ? 'YES' : 'NO',
+        i.auditRisk ? 'YES' : 'NO',
+        i.adhoc ? 'YES' : 'NO',
+      ];
+    })];
     downloadCsv(`BNA1_TO_full_${ymd()}.csv`, rows);
     toast('Exported full CSV');
   });
@@ -748,26 +819,35 @@
     toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
   }
 
-  // Load ETA mapping (column G from procurement sheet) and apply to items.
-  // The eta.json file is refreshed hourly by .github/workflows/refresh-eta.yml.
-  fetch('./eta.json', { cache: 'no-cache' })
+  // Load procurement metadata (ETA + on-hand units + consumption + TO available + lead days)
+  // The procurement.json file is refreshed hourly by .github/workflows/refresh-eta.yml.
+  fetch('./procurement.json', { cache: 'no-cache' })
     .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
     .then(data => {
-      etaMeta = data;
-      const m = data.eta || {};
-      items.forEach(it => { if (m[it.uuid]) it.eta = m[it.uuid]; });
+      procMeta = data;
+      const m = data.items || {};
+      items.forEach(it => {
+        const r = m[it.uuid];
+        if (!r) return;
+        if (r.eta) it.eta = r.eta;
+        if (r.ohUnits != null) it.ohUnits = r.ohUnits;
+        if (r.consumption != null) it.consumption = r.consumption;
+        if (r.toAvailable != null) it.toAvailable = r.toAvailable;
+        if (r.leadDays != null) it.leadDays = r.leadDays;
+      });
       const blocked = items.filter(i => !i.available);
       const blockedWithEta = blocked.filter(i => i.eta && i.eta.length).length;
+      const withProc = items.filter(i => i.toAvailable != null || i.leadDays != null).length;
       const note = $('eta-status');
       if (note) {
         const rel = relativeTime(new Date(data.fetchedAt));
-        note.innerHTML = `Current ETA · ${blockedWithEta} of ${blocked.length} blocked items have a date (${data.count} ETAs total) · refreshed ${rel} · <a href="${escapeHtml(data.source)}" target="_blank" rel="noopener">source</a>`;
+        note.innerHTML = `Procurement data · ${withProc} of ${items.length} items linked · ${blockedWithEta} of ${blocked.length} blocked items have an ETA · refreshed ${rel} · <a href="${escapeHtml(data.source)}" target="_blank" rel="noopener">source</a>`;
       }
       render();
     })
     .catch(err => {
       const note = $('eta-status');
-      if (note) note.textContent = `Current ETA data unavailable (${err.message})`;
+      if (note) note.textContent = `Procurement data unavailable (${err.message})`;
     });
 
   function relativeTime(d) {
