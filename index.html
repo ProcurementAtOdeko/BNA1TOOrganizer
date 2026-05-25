@@ -211,6 +211,95 @@
   .legend .dot.green { background: var(--green); }
   .legend .dot.red { background: var(--red); }
   .legend .dot.amber { background: var(--amber); }
+
+  /* ------- Mobile (≤ 700px): cards instead of a table, single column ------- */
+  @media (max-width: 700px) {
+    main { padding: 14px 12px 80px; }
+    header { padding: 12px 14px; flex-wrap: wrap; gap: 10px; }
+    header .brand { flex: 1 1 auto; min-width: 0; gap: 10px; }
+    header .logo { width: 32px; height: 32px; }
+    header h1 { font-size: 15px; }
+    header .sub { font-size: 11px; }
+    header .actions { width: 100%; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    header .actions button { padding: 9px 8px; font-size: 12px; }
+
+    .kpis { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: 14px; }
+    .kpi { padding: 10px 12px; }
+    .kpi .value { font-size: 20px; }
+
+    .grid { gap: 12px; }
+    .card h3 { padding: 12px 14px; font-size: 10.5px; }
+    .card h3 .legend { display: none; }
+
+    .toolbar { padding: 10px 12px; gap: 8px; }
+    .toolbar input[type=text], .toolbar select {
+      flex: 1 1 100%; min-width: 0; padding: 9px 11px; font-size: 14px;
+    }
+    .toolbar #btn-add-toggle { flex: 1 1 100%; }
+    .toolbar .grow { display: none; }
+    .toolbar #filter-count { order: 99; }
+
+    .adhoc-form.open { grid-template-columns: 1fr 1fr; padding: 12px; gap: 10px; }
+    .adhoc-form label[style*="span 2"], .adhoc-form .actions { grid-column: 1 / -1 !important; }
+    .adhoc-form input, .adhoc-form select { font-size: 14px; padding: 9px 11px; }
+
+    /* Transform table rows into stacked cards */
+    .table-scroll { max-height: none; overflow: visible; }
+    table, tbody { display: block; width: 100%; }
+    thead { display: none; }
+    tbody tr {
+      display: block;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin: 10px 12px;
+    }
+    tbody tr.has-qty { box-shadow: inset 3px 0 0 var(--accent-yellow); }
+    tbody tr.unavailable { box-shadow: inset 3px 0 0 var(--red); }
+    tbody tr.adhoc { box-shadow: inset 3px 0 0 var(--violet); }
+    tbody td {
+      display: block;
+      border-bottom: none;
+      padding: 4px 0;
+      text-align: left !important;
+    }
+    tbody td[data-label] {
+      display: flex; align-items: baseline; gap: 8px; min-height: 22px;
+    }
+    tbody td[data-label]::before {
+      content: attr(data-label);
+      color: var(--muted);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      font-weight: 600;
+      flex: 0 0 64px;
+    }
+    tbody td.product { padding: 0 0 8px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
+    tbody td.product::before { content: none; }
+    tbody td.product .product-sub { margin-top: 4px; }
+    tbody td.status-cell::before { align-self: flex-start; padding-top: 4px; }
+    tbody td.chips-cell, tbody td .chips-cell { max-width: none; }
+    tbody td.qty-cell {
+      flex-direction: column; align-items: stretch; padding-top: 10px;
+      border-top: 1px solid var(--line); margin-top: 6px;
+    }
+    tbody td.qty-cell::before { flex: 0 0 auto; margin-bottom: 4px; }
+    tbody td input.qty {
+      width: 100%; max-width: 180px; height: 44px;
+      padding: 10px 12px; font-size: 16px;
+    }
+    tbody td.row-actions { padding-top: 0; }
+    tbody td.row-actions:empty { display: none; }
+    tbody td.row-actions::before { content: none; }
+    .qty-meta { font-size: 11px; white-space: normal; }
+    .qty-meta .btn-pallet { padding: 4px 8px; font-size: 11px; }
+    .btn-copy-uuid { padding: 2px 8px; font-size: 11px; }
+
+    /* Side cards stack and shrink */
+    .bar-row { grid-template-columns: 110px 1fr 32px; }
+  }
 </style>
 </head>
 <body>
@@ -682,13 +771,13 @@
           <span class="${it.available ? 'avail' : 'unavail'}">${escapeHtml(it.product)}</span>
           <span class="product-sub">${escapeHtml(it.subCategory || '')}${it.uuid ? ` · <button type="button" class="btn-copy-uuid" data-uuid="${escapeHtml(it.uuid)}" title="Copy full UUID: ${escapeHtml(it.uuid)}">${escapeHtml(String(it.uuid).slice(0,8))}<span class="copy-glyph" aria-hidden="true">⧉</span></button>` : ''}</span>
         </td>
-        <td>${escapeHtml(it.brand)}</td>
-        <td>${escapeHtml(it.category)}</td>
-        <td>${escapeHtml(it.uom || '')}</td>
-        <td>${escapeHtml(it.source)}</td>
-        <td><div class="chips-cell">${chips}</div></td>
-        <td style="text-align:right;">
-          <input type="number" min="0" step="1" class="qty"
+        <td data-label="Brand">${escapeHtml(it.brand)}</td>
+        <td data-label="Category">${escapeHtml(it.category)}</td>
+        <td data-label="UOM">${escapeHtml(it.uom || '')}</td>
+        <td data-label="Source">${escapeHtml(it.source)}</td>
+        <td class="status-cell" data-label="Status"><div class="chips-cell">${chips}</div></td>
+        <td class="qty-cell" data-label="Qty" style="text-align:right;">
+          <input type="number" min="0" step="1" inputmode="numeric" class="qty"
                  value="${it.qty ?? ''}"
                  data-uuid="${escapeHtml(it.uuid)}"
                  ${!it.available ? 'title="Item not available for TO — Qty will be excluded on export"' : ''}>
