@@ -134,7 +134,8 @@
   thead th {
     text-align:left; padding:10px 12px; background: var(--panel-2);
     color: var(--ink-2); font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:.08em;
-    border-bottom:1px solid var(--line); position: sticky; top:0; cursor:pointer; user-select:none;
+    border-bottom:1px solid var(--line); position: sticky; top: 72px; cursor:pointer; user-select:none;
+    z-index: 5;
   }
   thead th .arrow { opacity:.35; margin-left:4px; }
   thead th.sorted .arrow { opacity:1; color: var(--ink-2); }
@@ -181,7 +182,7 @@
   }
   .qty-meta .btn-pallet:hover { background: var(--accent-yellow); border-color: var(--accent-yellow); }
 
-  .table-scroll { max-height: 640px; overflow:auto; }
+  .table-scroll { overflow: visible; }
   .empty { padding:30px; text-align:center; color:var(--muted); }
 
   .bar-list { display:flex; flex-direction:column; gap:7px; }
