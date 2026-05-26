@@ -147,6 +147,17 @@ def main(src_path: str, dest_path: str, out_path: str) -> int:
     source_items = load_source(src)
     dest_items = load_dest(dest, "BNA1")
 
+    # Defensive: the dest sheet's CSV export occasionally truncates and drops BNA1
+    # rows entirely. Refuse to build a procurement.json that would silently wipe
+    # all BNA1 fields from the dashboard.
+    if not dest_items:
+        print(
+            "ERROR: zero BNA1 rows parsed from destination CSV. "
+            "Refusing to write procurement.json (likely a truncated export).",
+            file=sys.stderr,
+        )
+        return 3
+
     merged: dict = {}
     for uuid, rec in source_items.items():
         merged[uuid] = dict(rec)

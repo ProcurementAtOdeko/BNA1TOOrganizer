@@ -34,10 +34,24 @@ jobs:
 
       - name: Fetch BNA1 inventory sheet
         run: |
-          curl -sSL --fail \
-            "https://docs.google.com/spreadsheets/d/1sPEc5rBdRB9qaJijBh4z8DK4ZVo--5xmTGbPTZ5n2nQ/export?format=csv&gid=1794766977" \
-            -o bna1-inventory.csv
-          test -s bna1-inventory.csv
+          set -euo pipefail
+          url="https://docs.google.com/spreadsheets/d/1sPEc5rBdRB9qaJijBh4z8DK4ZVo--5xmTGbPTZ5n2nQ/export?format=csv&gid=1794766977"
+          # The CSV export endpoint occasionally serves a truncated payload that drops
+          # the tail of the sheet (BNA1 lands near the bottom alphabetically). Retry
+          # with backoff until we get a body that actually contains BNA1 rows.
+          for attempt in 1 2 3 4; do
+            curl -sSL --fail "$url" -o bna1-inventory.csv
+            bytes=$(wc -c < bna1-inventory.csv)
+            bna_rows=$(awk -F, 'NR>1 && $2 == "BNA1"' bna1-inventory.csv | wc -l | tr -d ' ')
+            echo "Attempt $attempt: $bytes bytes, $bna_rows BNA1 rows"
+            if [ "$bna_rows" -ge 50 ]; then
+              echo "OK"
+              exit 0
+            fi
+            sleep $((attempt * 5))
+          done
+          echo "::error::BNA1 inventory fetch returned $bna_rows rows after 4 attempts (expected at least 50); aborting refresh"
+          exit 1
 
       - name: Build procurement.json
         run: python3 scripts/build_procurement.py procurement-source.csv bna1-inventory.csv procurement.json
