@@ -134,7 +134,7 @@
   thead th {
     text-align:left; padding:10px 12px; background: var(--panel-2);
     color: var(--ink-2); font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:.08em;
-    border-bottom:1px solid var(--line); position: sticky; top: 72px; cursor:pointer; user-select:none;
+    border-bottom:1px solid var(--line); position: sticky; top: 0; cursor:pointer; user-select:none;
     z-index: 5;
   }
   thead th .arrow { opacity:.35; margin-left:4px; }
@@ -182,7 +182,7 @@
   }
   .qty-meta .btn-pallet:hover { background: var(--accent-yellow); border-color: var(--accent-yellow); }
 
-  .table-scroll { overflow: visible; }
+  .table-scroll { max-height: 640px; overflow: auto; }
   .empty { padding:30px; text-align:center; color:var(--muted); }
 
   .bar-list { display:flex; flex-direction:column; gap:7px; }
@@ -1208,6 +1208,48 @@
     if (diffSec < 86400) return `${Math.round(diffSec/3600)}h ago`;
     return d.toISOString().slice(0,10);
   }
+
+  // Keep the items card's internal scroll box the same height as the right-hand
+  // sidebar so the page bottoms out together; any extra rows scroll inside the
+  // box. Disabled on mobile, where the layout is single-column cards anyway.
+  const grid = document.querySelector('main > .grid');
+  const itemsCardEl = grid && grid.children[0];
+  const sidebarEl = grid && grid.children[1];
+  const tableScrollEl = itemsCardEl && itemsCardEl.querySelector('.table-scroll');
+
+  let syncTimer = null;
+  function scheduleSyncHeight() {
+    if (syncTimer) clearTimeout(syncTimer);
+    syncTimer = setTimeout(syncTableHeight, 30);
+  }
+  function syncTableHeight() {
+    syncTimer = null;
+    if (!tableScrollEl || !sidebarEl || !itemsCardEl) return;
+    if (window.innerWidth <= 700) {
+      tableScrollEl.style.maxHeight = '';
+      tableScrollEl.style.overflow = '';
+      return;
+    }
+    // Measure natural heights with the cap lifted, then reapply if needed.
+    tableScrollEl.style.maxHeight = 'none';
+    tableScrollEl.style.overflow = 'visible';
+    const sidebarH = sidebarEl.offsetHeight;
+    const cardH = itemsCardEl.offsetHeight;
+    if (cardH > sidebarH) {
+      const overhead = cardH - tableScrollEl.offsetHeight;
+      tableScrollEl.style.maxHeight = Math.max(240, sidebarH - overhead) + 'px';
+      tableScrollEl.style.overflow = 'auto';
+    }
+  }
+
+  window.addEventListener('resize', scheduleSyncHeight);
+  if (window.ResizeObserver && sidebarEl) {
+    new ResizeObserver(scheduleSyncHeight).observe(sidebarEl);
+  }
+  // Patch render() so the scroll cap is recomputed whenever the items table
+  // body changes (filter, sort, add/delete ad-hoc, etc.).
+  const _origRender = render;
+  render = function () { _origRender.apply(this, arguments); scheduleSyncHeight(); };
 
   render();
 })();
